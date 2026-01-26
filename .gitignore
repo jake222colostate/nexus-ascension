@@ -46,3 +46,4 @@ node_modules/
 assets/.ipynb_checkpoints/
 *.bak.*
 19
+backups/
