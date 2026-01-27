@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState, Suspense } from 'react';
 import { View, StyleSheet, useWindowDimensions} from 'react-native';
 import { Canvas, useFrame } from '@react-three/fiber/native';
+import { useGLTF, useProgress } from '@react-three/drei/native';
 import * as THREE from 'three';
 
 type EnemyKind = 'enemy' | 'boss';
@@ -8,15 +9,75 @@ type Enemy = { id: string; kind: EnemyKind; pos: THREE.Vector3; hp: number; maxH
 type Projectile = { id: string; pos: THREE.Vector3; vel: THREE.Vector3; ttl: number };
 
 const CHUNK_LEN = 40;
-const CHUNK_BACK = 24;
-const CHUNK_AHEAD = 14;
+const CHUNK_BACK = 3;
+const CHUNK_AHEAD = 3;
 
 const PATH_W = 5.2;
 const GRASS_W = 30;
-const MOUNTAIN_X = 20;
+const MOUNTAIN_X = 30;
+
+const SPAWN_MAX_Z = 6.0; // cannot go behind spawn beyond this (+Z)
+const PLAYER_RADIUS = 0.55;
+const ENEMY_RADIUS = 0.55;
+const PODIUM_HALF = 1.1;
+const SHOW_DEBUG_WALL = true; // TEMP: set false after you confirm placement
+
+const MOUNTAIN_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/mountain_v2.glb';
+
+const GAZEBO_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/spawn_gazebo.glb';
+useGLTF.preload(MOUNTAIN_URL);
+useGLTF.preload(GAZEBO_URL);
+
+function MountainGLB(props: { position: [number, number, number]; scale?: number; rotationY?: number }) {
+  const { scene } = useGLTF(MOUNTAIN_URL);
+  const obj = useMemo(() => scene.clone(), [scene]);
+  useEffect(() => {
+    console.log("[MountainGLB] loaded", { hasScene: !!scene, children: scene?.children?.length });
+  }, [scene]);
+  return (
+    <primitive
+      object={obj}
+      position={props.position}
+      scale={props.scale ?? 1}
+      rotation={[0, props.rotationY ?? 0, 0]}
+    />
+  );
+}
+
+
+function GazeboGLB(props: { position: [number, number, number]; scale?: number; rotationY?: number }) {
+  const { scene } = useGLTF(GAZEBO_URL);
+  const obj = useMemo(() => scene.clone(), [scene]);
+  return (
+    <primitive
+      object={obj}
+      position={props.position}
+      scale={props.scale ?? 1}
+      rotation={[0, props.rotationY ?? 0, 0]}
+    />
+  );
+}
+
 
 function clamp(v: number, lo: number, hi: number) { return Math.max(lo, Math.min(hi, v)); }
 function rand(a: number, b: number) { return a + Math.random() * (b - a); }
+
+type AABB2 = { id: string; minX: number; maxX: number; minZ: number; maxZ: number };
+
+function resolveCircleAABBs(pos: THREE.Vector3, r: number, boxes: AABB2[]) {
+  for (const b of boxes) {
+    const cx = clamp(pos.x, b.minX, b.maxX);
+    const cz = clamp(pos.z, b.minZ, b.maxZ);
+    const dx = pos.x - cx;
+    const dz = pos.z - cz;
+    const d2 = (dx * dx) + (dz * dz);
+    if (d2 >= r * r) continue;
+    const d = Math.sqrt(Math.max(1e-9, d2));
+    const push = (r - d);
+    pos.x += (dx / d) * push;
+    pos.z += (dz / d) * push;
+  }
+}
 
 function makeEnemy(kind: EnemyKind, z: number): Enemy {
   const id = `${kind}_${Date.now()}_${Math.random().toString(16).slice(2)}`;
@@ -27,14 +88,9 @@ function makeEnemy(kind: EnemyKind, z: number): Enemy {
   return { id, kind, pos: new THREE.Vector3(x, kind === 'boss' ? 1.2 : 0.7, z), hp, maxHp, spd };
 }
 
-function Chunk(props: { idx: number; centerZ: number }) {
+function Chunk(props: { idx: number; centerZ: number; showGazebo?: boolean }) {
   const { idx, centerZ } = props;
 
-  const mountainBands = useMemo(() => {
-    const zs: number[] = [];
-    for (let i = 0; i < 7; i++) zs.push(centerZ + (i * (CHUNK_LEN / 6)) - (CHUNK_LEN / 2));
-    return zs;
-  }, [centerZ]);
 
   return (
     <group position={[0, 0, centerZ]}>
@@ -48,20 +104,16 @@ function Chunk(props: { idx: number; centerZ: number }) {
         <meshStandardMaterial color={'#3a4f3a'} />
       </mesh>
 
-      <group>
-        {mountainBands.map((mz, i) => (
-          <group key={`m_${idx}_${i}`}>
-            <mesh position={[-MOUNTAIN_X, 2.2, mz - centerZ]}>
-              <coneGeometry args={[4.2, 7.5, 6]} />
-              <meshStandardMaterial color={'#405a3f'} />
-            </mesh>
-            <mesh position={[MOUNTAIN_X, 2.2, mz - centerZ]}>
-              <coneGeometry args={[4.2, 7.5, 6]} />
-              <meshStandardMaterial color={'#405a3f'} />
-            </mesh>
-          </group>
-        ))}
-      </group>
+        {(idx === 0 && !!props.showGazebo) ? (
+          <GazeboGLB position={[0, 0.0, 0]} scale={12.0} rotationY={0} />
+        ) : null}
+
+
+
+        <group>
+          <MountainGLB position={[-MOUNTAIN_X, 0.0, 0]} scale={35.0} rotationY={(idx % 2 === 0) ? 0 : Math.PI} />
+          <MountainGLB position={[ MOUNTAIN_X, 0.0, 0]} scale={35.0} rotationY={(idx % 2 === 0) ? Math.PI : 0} />
+        </group>
     </group>
   );
 }
@@ -79,6 +131,7 @@ function Scene(props: {
   onEnemyKilled: (kind: EnemyKind) => void;
 }) {
   const playerPosRef = useRef(new THREE.Vector3(0, 0.6, 0));
+    const showGazebo = Math.abs(playerPosRef.current.z) < 90;
   const simAcc = useRef(0);
     const moveVelRef = useRef({ x: 0, y: 0 });
   const hadRuntimeErr = useRef(false);
@@ -106,6 +159,20 @@ function Scene(props: {
     return out;
   }, []);
 
+
+    const podiumBoxes = useMemo(() => {
+      return podiums.map((pd) => {
+        const x = pd.side * 3.8;
+        const z = pd.z;
+        return {
+          id: pd.id,
+          minX: x - PODIUM_HALF,
+          maxX: x + PODIUM_HALF,
+          minZ: z - PODIUM_HALF,
+          maxZ: z + PODIUM_HALF,
+        } as AABB2;
+      });
+    }, [podiums]);
   const monument = useMemo(() => ({ id: 'monument_1', side: 1 as 1, z: -320 }), []);
   const collectedRef = useRef<Record<string, 1>>({});
   const [collectedTick, setCollectedTick] = useState(0);
@@ -202,10 +269,22 @@ function Scene(props: {
           const wz = (v.x * rz) + (v.y * fz);
           p.x += wx * stepDt;
           p.z += wz * stepDt;
+          p.z = Math.min(p.z, SPAWN_MAX_Z);
 
 
         p.x = clamp(p.x, -12.5, 12.5);
 
+
+                    // COLLISION: podiums (2D AABB)
+          const nearPodiumBoxes: AABB2[] = [];
+          for (const b of podiumBoxes) {
+            if (collectedRef.current[b.id]) continue;
+            const cz = (b.minZ + b.maxZ) * 0.5;
+            const dz = cz - p.z;
+            if (Math.abs(dz) > 60) continue; // only nearby colliders
+            nearPodiumBoxes.push(b);
+          }
+          resolveCircleAABBs(p, PLAYER_RADIUS, nearPodiumBoxes);
         spawnT.current += stepDt;
         if (spawnT.current >= 1.0) {
           spawnT.current = 0;
@@ -237,7 +316,10 @@ function Scene(props: {
             const step = Math.min(canStep, e.spd * stepDt);
             if (step > 0.0001) {
               moved = true;
-              return { ...e, pos: e.pos.clone().add(dir.multiplyScalar(step)) };
+              const np = e.pos.clone().add(dir.multiplyScalar(step));
+                const ep = np;
+                resolveCircleAABBs(ep, ENEMY_RADIUS, nearPodiumBoxes);
+                return { ...e, pos: ep };
             }
             return e;
           });
@@ -294,22 +376,30 @@ function Scene(props: {
     }
   });
 
-  const chunks = useMemo(() => Array.from({ length: CHUNK_BACK + CHUNK_AHEAD }, (_, i) => i - CHUNK_BACK), []);
+  const chunks = useMemo(() => Array.from({ length: CHUNK_BACK + CHUNK_AHEAD + 1 }, (_, i) => i - CHUNK_BACK), []);
   const baseChunk = baseChunkRef.current;
 
   const fogColor = '#0a0f18';
 
   return (
-    <>
+  <>
       <fog attach="fog" args={[fogColor, 6, 110]} />
       <ambientLight intensity={0.65} />
       <directionalLight position={[6, 10, 6]} intensity={1.35} />
       <directionalLight position={[-6, 8, -6]} intensity={0.55} />
 
+        {SHOW_DEBUG_WALL ? (
+          <mesh position={[0, 1.2, 1.0]}>
+            <boxGeometry args={[34, 6, 0.35]} />
+            <meshStandardMaterial color={'#ff00ff'} />
+          </mesh>
+        ) : null}
+
+
       {chunks.map((i) => {
         const chunkIdx = baseChunk + i;
         const centerZ = -(chunkIdx * CHUNK_LEN) - (CHUNK_LEN / 2);
-        return <Chunk key={`c_${chunkIdx}_${chunkTick}`} idx={chunkIdx} centerZ={centerZ} />;
+        return <Chunk key={`c_${chunkIdx}`} idx={chunkIdx} centerZ={centerZ} showGazebo={showGazebo} />;
       })}
 
       {podiums.map((pd) => {
@@ -547,7 +637,10 @@ export default function FantasyWorld3D(props: {
         onCreated={({ gl }) => { try { (gl as any).setClearColor?.('#0a0f18', 1); } catch (e) {} }}
         camera={{ position: [0, 1.55, 0], fov: 65 }}
       >
-        <Scene
+        <Suspense fallback={null}>
+          
+
+          <Scene
           walking={!!props.walking}
           moveRef={moveRef}
           yawRef={yawRef}
@@ -559,6 +652,8 @@ export default function FantasyWorld3D(props: {
           onMonument={props.onMonument}
           onEnemyKilled={props.onEnemyKilled}
         />
+                  
+        </Suspense>
       </Canvas>
 
       <View style={[styles.lookLayer, { left: LOOK_START_X, width: W - LOOK_START_X }]} pointerEvents="none"  />
