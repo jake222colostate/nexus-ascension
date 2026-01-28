@@ -22,7 +22,7 @@ const SPAWN_MAX_Z = 6.0; // cannot go behind spawn beyond this (+Z)
 const PLAYER_RADIUS = 0.55;
 const ENEMY_RADIUS = 0.55;
 const PODIUM_HALF = 1.1;
-const SHOW_DEBUG_WALL = true; // TEMP: set false after you confirm placement
+const SHOW_DEBUG_WALL = false; // TEMP: set false after you confirm placement
 
 const MOUNTAIN_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/mountain_v2.glb';
 
@@ -171,6 +171,9 @@ function resolveSphereMeshBVH(
 
       root.updateWorldMatrix(true, false);
 
+      const rootBox = new THREE.Box3().setFromObject(root);
+      const cutY = rootBox.min.y + 0.20 * (rootBox.max.y - rootBox.min.y);
+
       root.traverse((obj: any) => {
         if (!obj || !obj.isMesh || !obj.geometry) return;
         const g: any = obj.geometry;
@@ -192,6 +195,8 @@ function resolveSphereMeshBVH(
 
         __bvhWorldP.copy((hit as any).point);
         obj.localToWorld(__bvhWorldP);
+
+        if (__bvhWorldP.y > cutY) return;
 
         const posAttr = g.attributes?.position;
         if (!posAttr) return;
@@ -222,6 +227,7 @@ function resolveSphereMeshBVH(
         if (nlen < 1e-8) return;
         __triN.multiplyScalar(1 / nlen);
 
+        __bvhDesired.copy(pos).sub(__bvhWorldP);
         if (__triN.dot(__bvhDesired) < 0) __triN.negate();
 
         __bvhDelta.copy(pos).sub(__bvhWorldP);
@@ -491,7 +497,6 @@ const onMountains = useCallback((idx: number, roots: any[]) => {
           p.z = Math.min(p.z, SPAWN_MAX_Z);
 
 
-        p.x = clamp(p.x, -12.5, 12.5);
 
 
                     // COLLISION: podiums (2D AABB)
@@ -554,7 +559,8 @@ spawnT.current += stepDt;
               const np = e.pos.clone().add(dir.multiplyScalar(step));
                 const ep = np;
                 resolveCircleAABBs(ep, ENEMY_RADIUS, nearPodiumBoxes);
-                return { ...e, pos: ep };
+                
+                  resolveSphereMeshBVH(ep, ENEMY_RADIUS, tmp);return { ...e, pos: ep };
             }
             return e;
           });
