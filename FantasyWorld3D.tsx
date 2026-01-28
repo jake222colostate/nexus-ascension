@@ -1,9 +1,15 @@
 import React, {useEffect, useMemo, useRef, useState, Suspense, useCallback} from 'react';
-import { MeshBVH } from "three-mesh-bvh";
+import { MeshBVH, acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from "three-mesh-bvh";
 import { View, StyleSheet, useWindowDimensions} from 'react-native';
 import { Canvas, useFrame } from '@react-three/fiber/native';
 import { useGLTF, useProgress } from '@react-three/drei/native';
 import * as THREE from 'three';
+
+// === BVH PATCH (must run once, same THREE instance as R3F) ===
+(THREE.BufferGeometry as any).prototype.computeBoundsTree = computeBoundsTree;
+(THREE.BufferGeometry as any).prototype.disposeBoundsTree = disposeBoundsTree;
+(THREE.Mesh as any).prototype.raycast = acceleratedRaycast;
+
 
 type EnemyKind = 'enemy' | 'boss';
 type Enemy = { id: string; kind: EnemyKind; pos: THREE.Vector3; hp: number; maxHp: number; spd: number };
@@ -31,52 +37,20 @@ useGLTF.preload(MOUNTAIN_URL);
 useGLTF.preload(GAZEBO_URL);
 
 function MountainGLB(props: { position: [number, number, number]; scale?: number | [number, number, number]; rotationY?: number }) {
-  const loggedGeomRef = useRef(false);
   const { scene } = useGLTF(MOUNTAIN_URL);
-  const obj = useMemo(() => {
-    const c: any = scene.clone(true);
-    try {
-      const box = new THREE.Box3().setFromObject(c);
-      const minY = box?.min?.y;
-      if (typeof minY === 'number' && isFinite(minY) && Math.abs(minY) > 1e-5) {
-        // lift so the lowest vertex sits on y=0
-        c.position.y -= minY;
+
+  const obj = useMemo<THREE.Object3D>(() => {
+    const clone = scene.clone(true);
+    clone.traverse((m: any) => {
+      if (!m?.isMesh || !m.geometry) return;
+      const g: any = m.geometry;
+      if (!g.boundsTree) {
+        g.boundsTree = new MeshBVH(g);
       }
-    } catch {}
-    return c;
+    });
+    return clone;
   }, [scene]);
-  useEffect(() => {
-      console.log("[MountainGLB] loaded", { hasScene: !!scene, children: scene?.children?.length });
 
-      // BVH_BUILD_DEBUG: build BVHs for mountain meshes (tri-mesh collision support)
-      try {
-        const root: any = scene;
-        if (root) {
-          let meshCount = 0;
-          let bvhCount = 0;
-          root.traverse((m: any) => {
-              if (!m || !m.isMesh || !m.geometry) return;
-              meshCount++;
-              const g: any = m.geometry;
-
-              if (!loggedGeomRef.current) {
-                const posCount = g?.attributes?.position?.count ?? 0;
-                const triCount = g?.index?.count ? (g.index.count / 3) : (posCount / 3);
-                console.log('[MountainGLB] geom', { posCount, triCount });
-                loggedGeomRef.current = true;
-              }
-            if (!g.boundsTree) {
-              g.boundsTree = new MeshBVH(g);
-              bvhCount++;
-            }
-          });
-          if (false) console.log("[BVH] built", { meshCount, bvhCount });
-        }
-      } catch (e) {
-        if (false) console.log("[BVH] error", String(e));
-      }
-
-  }, [scene]);
   return (
     <primitive
       object={obj}
@@ -150,6 +124,9 @@ const __triC = new THREE.Vector3();
 const __triN = new THREE.Vector3();
 const __tmp1 = new THREE.Vector3();
 const __tmp2 = new THREE.Vector3();
+const __bvhR2 = { v: 1 };
+const __bvhBestN = new THREE.Vector3();
+const __bvhTmpN = new THREE.Vector3();
 
 function resolveSphereMeshBVH(
   pos: THREE.Vector3,
@@ -158,21 +135,21 @@ function resolveSphereMeshBVH(
 ) {
   if (!roots || roots.length === 0) return;
 
+  const EPS = 0.03;   // small skin so you stay outside
+  const MAXP = 0.28;  // cap per pass so we don't teleport
+
   __bvhSphere.radius = r;
 
-  for (let pass = 0; pass < 3; pass++) {
+  for (let pass = 0; pass < 4; pass++) {
     let anyPush = false;
 
     for (const root of roots) {
       if (!root) continue;
 
       root.getWorldPosition(__bvhRootPos);
-      if (Math.abs(__bvhRootPos.z - pos.z) > 90) continue;
+      if (Math.abs(__bvhRootPos.z - pos.z) > 120) continue;
 
-      root.updateWorldMatrix(true, false);
-
-      const rootBox = new THREE.Box3().setFromObject(root);
-      const cutY = rootBox.min.y + 0.20 * (rootBox.max.y - rootBox.min.y);
+      root.updateWorldMatrix(true, true);
 
       root.traverse((obj: any) => {
         if (!obj || !obj.isMesh || !obj.geometry) return;
@@ -190,52 +167,34 @@ function resolveSphereMeshBVH(
 
         const hit = g.boundsTree.closestPointToPoint(__bvhLocalP, __bvhHit);
         if (!hit) return;
-        const faceIndex = (hit as any).faceIndex ?? -1;
-        if (faceIndex < 0) return;
 
         __bvhWorldP.copy((hit as any).point);
         obj.localToWorld(__bvhWorldP);
 
-        if (__bvhWorldP.y > cutY) return;
-
-        const posAttr = g.attributes?.position;
-        if (!posAttr) return;
-
-        let ia: number, ib: number, ic: number;
-        const indexAttr = g.index;
-        if (indexAttr && indexAttr.array) {
-          const arr: any = indexAttr.array;
-          const b = faceIndex * 3;
-          ia = arr[b + 0]; ib = arr[b + 1]; ic = arr[b + 2];
-        } else {
-          const b = faceIndex * 3;
-          ia = b + 0; ib = b + 1; ic = b + 2;
-        }
-
-        __triA.fromBufferAttribute(posAttr, ia);
-        __triB.fromBufferAttribute(posAttr, ib);
-        __triC.fromBufferAttribute(posAttr, ic);
-
-        obj.localToWorld(__triA);
-        obj.localToWorld(__triB);
-        obj.localToWorld(__triC);
-
-        __tmp1.copy(__triB).sub(__triA);
-        __tmp2.copy(__triC).sub(__triA);
-        __triN.copy(__tmp1).cross(__tmp2);
-        const nlen = __triN.length();
-        if (nlen < 1e-8) return;
-        __triN.multiplyScalar(1 / nlen);
-
-        __bvhDesired.copy(pos).sub(__bvhWorldP);
-        if (__triN.dot(__bvhDesired) < 0) __triN.negate();
-
+        // Detect penetration in FULL 3D (handles overlapping mountains / overhangs),
+        // but push only in XZ (stable FPS walker).
         __bvhDelta.copy(pos).sub(__bvhWorldP);
-        const signedDist = __bvhDelta.dot(__triN);
+        const dist3 = __bvhDelta.length();
 
-        if (signedDist < r) {
-          pos.addScaledVector(__triN, (r - signedDist));
-          anyPush = true;
+        if (dist3 < r + EPS) {
+          // XZ direction for push
+          __bvhDelta.y = 0;
+          let distXZ = __bvhDelta.length();
+
+          // If we're exactly on the point in XZ, use a stable fallback direction away from root
+          if (distXZ < 1e-6) {
+            __bvhDelta.copy(pos).sub(__bvhRootPos);
+            __bvhDelta.y = 0;
+            distXZ = __bvhDelta.length();
+            if (distXZ < 1e-6) return;
+          }
+
+          let push = (r + EPS) - dist3;
+          if (push > MAXP) push = MAXP;
+          if (push > 1e-6) {
+            pos.addScaledVector(__bvhDelta, push / distXZ);
+            anyPush = true;
+          }
         }
       });
     }
@@ -243,6 +202,7 @@ function resolveSphereMeshBVH(
     if (!anyPush) break;
   }
 }
+
 function makeEnemy(kind: EnemyKind, z: number): Enemy {
   const id = `${kind}_${Date.now()}_${Math.random().toString(16).slice(2)}`;
   const x = rand(-10, 10);
@@ -276,7 +236,7 @@ function Chunk(props: { idx: number; centerZ: number; showGazebo?: boolean; onMo
               max: [Number(b.max.x.toFixed(2)), Number(b.max.y.toFixed(2)), Number(b.max.z.toFixed(2))],
             };
           });
-          if (false) console.log('[BVH] mountainBox', { idx: props.idx, boxes });
+          if (true) console.log('[BVH] mountainBox', { idx: props.idx, boxes });
         } catch (e) {
           console.log('[BVH] mountainBox error', String(e));
         }
@@ -302,12 +262,12 @@ function Chunk(props: { idx: number; centerZ: number; showGazebo?: boolean; onMo
 
   return (
     <group position={[0, 0, centerZ]}>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
         <planeGeometry args={[PATH_W, CHUNK_LEN]} />
         <meshStandardMaterial color={'#2f3a2f'} polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-1} />
       </mesh>
 
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
         <planeGeometry args={[GRASS_W, CHUNK_LEN]} />
         <meshStandardMaterial color={'#3a4f3a'} />
       </mesh>
