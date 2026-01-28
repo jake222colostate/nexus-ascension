@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState, Suspense } from 'react';
+import React, {useEffect, useMemo, useRef, useState, Suspense, useCallback} from 'react';
+import { MeshBVH } from "three-mesh-bvh";
 import { View, StyleSheet, useWindowDimensions} from 'react-native';
 import { Canvas, useFrame } from '@react-three/fiber/native';
 import { useGLTF, useProgress } from '@react-three/drei/native';
@@ -9,12 +10,13 @@ type Enemy = { id: string; kind: EnemyKind; pos: THREE.Vector3; hp: number; maxH
 type Projectile = { id: string; pos: THREE.Vector3; vel: THREE.Vector3; ttl: number };
 
 const CHUNK_LEN = 40;
-const CHUNK_BACK = 3;
-const CHUNK_AHEAD = 3;
+const CHUNK_BACK = 2;
+const CHUNK_AHEAD = 2;
 
 const PATH_W = 5.2;
 const GRASS_W = 30;
-const MOUNTAIN_X = 30;
+const MOUNTAIN_X = 88;
+
 
 const SPAWN_MAX_Z = 6.0; // cannot go behind spawn beyond this (+Z)
 const PLAYER_RADIUS = 0.55;
@@ -28,11 +30,52 @@ const GAZEBO_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/p
 useGLTF.preload(MOUNTAIN_URL);
 useGLTF.preload(GAZEBO_URL);
 
-function MountainGLB(props: { position: [number, number, number]; scale?: number; rotationY?: number }) {
+function MountainGLB(props: { position: [number, number, number]; scale?: number | [number, number, number]; rotationY?: number }) {
+  const loggedGeomRef = useRef(false);
   const { scene } = useGLTF(MOUNTAIN_URL);
-  const obj = useMemo(() => scene.clone(), [scene]);
+  const obj = useMemo(() => {
+    const c: any = scene.clone(true);
+    try {
+      const box = new THREE.Box3().setFromObject(c);
+      const minY = box?.min?.y;
+      if (typeof minY === 'number' && isFinite(minY) && Math.abs(minY) > 1e-5) {
+        // lift so the lowest vertex sits on y=0
+        c.position.y -= minY;
+      }
+    } catch {}
+    return c;
+  }, [scene]);
   useEffect(() => {
-    console.log("[MountainGLB] loaded", { hasScene: !!scene, children: scene?.children?.length });
+      console.log("[MountainGLB] loaded", { hasScene: !!scene, children: scene?.children?.length });
+
+      // BVH_BUILD_DEBUG: build BVHs for mountain meshes (tri-mesh collision support)
+      try {
+        const root: any = scene;
+        if (root) {
+          let meshCount = 0;
+          let bvhCount = 0;
+          root.traverse((m: any) => {
+              if (!m || !m.isMesh || !m.geometry) return;
+              meshCount++;
+              const g: any = m.geometry;
+
+              if (!loggedGeomRef.current) {
+                const posCount = g?.attributes?.position?.count ?? 0;
+                const triCount = g?.index?.count ? (g.index.count / 3) : (posCount / 3);
+                console.log('[MountainGLB] geom', { posCount, triCount });
+                loggedGeomRef.current = true;
+              }
+            if (!g.boundsTree) {
+              g.boundsTree = new MeshBVH(g);
+              bvhCount++;
+            }
+          });
+          if (false) console.log("[BVH] built", { meshCount, bvhCount });
+        }
+      } catch (e) {
+        if (false) console.log("[BVH] error", String(e));
+      }
+
   }, [scene]);
   return (
     <primitive
@@ -47,7 +90,18 @@ function MountainGLB(props: { position: [number, number, number]; scale?: number
 
 function GazeboGLB(props: { position: [number, number, number]; scale?: number; rotationY?: number }) {
   const { scene } = useGLTF(GAZEBO_URL);
-  const obj = useMemo(() => scene.clone(), [scene]);
+  const obj = useMemo(() => {
+    const c: any = scene.clone(true);
+    try {
+      const box = new THREE.Box3().setFromObject(c);
+      const minY = box?.min?.y;
+      if (typeof minY === 'number' && isFinite(minY) && Math.abs(minY) > 1e-5) {
+        // lift so the lowest vertex sits on y=0
+        c.position.y -= minY;
+      }
+    } catch {}
+    return c;
+  }, [scene]);
   return (
     <primitive
       object={obj}
@@ -77,8 +131,112 @@ function resolveCircleAABBs(pos: THREE.Vector3, r: number, boxes: AABB2[]) {
     pos.x += (dx / d) * push;
     pos.z += (dz / d) * push;
   }
+
+
 }
 
+
+const __bvhLocalP = new THREE.Vector3();
+const __bvhWorldP = new THREE.Vector3();
+const __bvhDelta = new THREE.Vector3();
+const __bvhRootPos = new THREE.Vector3();
+const __bvhBox = new THREE.Box3();
+const __bvhSphere = new THREE.Sphere(new THREE.Vector3(), 1);
+const __bvhHit: any = { point: new THREE.Vector3(), distance: 0, faceIndex: -1 };
+const __bvhDesired = new THREE.Vector3();
+const __triA = new THREE.Vector3();
+const __triB = new THREE.Vector3();
+const __triC = new THREE.Vector3();
+const __triN = new THREE.Vector3();
+const __tmp1 = new THREE.Vector3();
+const __tmp2 = new THREE.Vector3();
+
+function resolveSphereMeshBVH(
+  pos: THREE.Vector3,
+  r: number,
+  roots: any[],
+) {
+  if (!roots || roots.length === 0) return;
+
+  __bvhSphere.radius = r;
+
+  for (let pass = 0; pass < 3; pass++) {
+    let anyPush = false;
+
+    for (const root of roots) {
+      if (!root) continue;
+
+      root.getWorldPosition(__bvhRootPos);
+      if (Math.abs(__bvhRootPos.z - pos.z) > 90) continue;
+
+      root.updateWorldMatrix(true, false);
+
+      root.traverse((obj: any) => {
+        if (!obj || !obj.isMesh || !obj.geometry) return;
+        const g: any = obj.geometry;
+        if (!g.boundsTree) return;
+
+        __bvhSphere.center.copy(pos);
+
+        if (!g.boundingBox) g.computeBoundingBox();
+        __bvhBox.copy(g.boundingBox).applyMatrix4(obj.matrixWorld);
+        if (!__bvhBox.intersectsSphere(__bvhSphere)) return;
+
+        __bvhLocalP.copy(pos);
+        obj.worldToLocal(__bvhLocalP);
+
+        const hit = g.boundsTree.closestPointToPoint(__bvhLocalP, __bvhHit);
+        if (!hit) return;
+        const faceIndex = (hit as any).faceIndex ?? -1;
+        if (faceIndex < 0) return;
+
+        __bvhWorldP.copy((hit as any).point);
+        obj.localToWorld(__bvhWorldP);
+
+        const posAttr = g.attributes?.position;
+        if (!posAttr) return;
+
+        let ia: number, ib: number, ic: number;
+        const indexAttr = g.index;
+        if (indexAttr && indexAttr.array) {
+          const arr: any = indexAttr.array;
+          const b = faceIndex * 3;
+          ia = arr[b + 0]; ib = arr[b + 1]; ic = arr[b + 2];
+        } else {
+          const b = faceIndex * 3;
+          ia = b + 0; ib = b + 1; ic = b + 2;
+        }
+
+        __triA.fromBufferAttribute(posAttr, ia);
+        __triB.fromBufferAttribute(posAttr, ib);
+        __triC.fromBufferAttribute(posAttr, ic);
+
+        obj.localToWorld(__triA);
+        obj.localToWorld(__triB);
+        obj.localToWorld(__triC);
+
+        __tmp1.copy(__triB).sub(__triA);
+        __tmp2.copy(__triC).sub(__triA);
+        __triN.copy(__tmp1).cross(__tmp2);
+        const nlen = __triN.length();
+        if (nlen < 1e-8) return;
+        __triN.multiplyScalar(1 / nlen);
+
+        if (__triN.dot(__bvhDesired) < 0) __triN.negate();
+
+        __bvhDelta.copy(pos).sub(__bvhWorldP);
+        const signedDist = __bvhDelta.dot(__triN);
+
+        if (signedDist < r) {
+          pos.addScaledVector(__triN, (r - signedDist));
+          anyPush = true;
+        }
+      });
+    }
+
+    if (!anyPush) break;
+  }
+}
 function makeEnemy(kind: EnemyKind, z: number): Enemy {
   const id = `${kind}_${Date.now()}_${Math.random().toString(16).slice(2)}`;
   const x = rand(-10, 10);
@@ -88,31 +246,79 @@ function makeEnemy(kind: EnemyKind, z: number): Enemy {
   return { id, kind, pos: new THREE.Vector3(x, kind === 'boss' ? 1.2 : 0.7, z), hp, maxHp, spd };
 }
 
-function Chunk(props: { idx: number; centerZ: number; showGazebo?: boolean }) {
+function Chunk(props: { idx: number; centerZ: number; showGazebo?: boolean; onMountains?: (idx: number, roots: any[]) => void }) {
   const { idx, centerZ } = props;
 
+
+  const leftMountainRef = useRef<any>(null);
+  const rightMountainRef = useRef<any>(null);
+
+  useEffect(() => {
+    let alive = true;
+    let tries = 0;
+    const tick = () => {
+      if (!alive) return;
+      const roots = [leftMountainRef.current, rightMountainRef.current].filter(Boolean);
+      if (roots.length) {
+        props.onMountains?.(props.idx, roots);
+                if (false) console.log('[BVH] registerChunk', { idx: props.idx, roots: roots.length });
+        try {
+          const boxes = roots.map((r) => {
+            const b = new THREE.Box3().setFromObject(r);
+            return {
+              min: [Number(b.min.x.toFixed(2)), Number(b.min.y.toFixed(2)), Number(b.min.z.toFixed(2))],
+              max: [Number(b.max.x.toFixed(2)), Number(b.max.y.toFixed(2)), Number(b.max.z.toFixed(2))],
+            };
+          });
+          if (false) console.log('[BVH] mountainBox', { idx: props.idx, boxes });
+        } catch (e) {
+          console.log('[BVH] mountainBox error', String(e));
+        }
+
+        return;
+      }
+      tries += 1;
+      if (tries < 60) {
+        const raf = (globalThis as any).requestAnimationFrame;
+        if (typeof raf === 'function') raf(tick);
+        else setTimeout(tick, 16);
+      } else {
+        props.onMountains?.(props.idx, []);
+        if (false) console.log('[BVH] registerChunk', { idx: props.idx, roots: 0, giveUp: true });
+      }
+    };
+    tick();
+    return () => {
+      alive = false;
+      props.onMountains?.(props.idx, []);
+    };
+  }, [props.idx, props.onMountains]);
 
   return (
     <group position={[0, 0, centerZ]}>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
         <planeGeometry args={[PATH_W, CHUNK_LEN]} />
-        <meshStandardMaterial color={'#2f3a2f'} />
+        <meshStandardMaterial color={'#2f3a2f'} polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-1} />
       </mesh>
 
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
         <planeGeometry args={[GRASS_W, CHUNK_LEN]} />
         <meshStandardMaterial color={'#3a4f3a'} />
       </mesh>
 
         {(idx === 0 && !!props.showGazebo) ? (
-          <GazeboGLB position={[0, 0.0, 0]} scale={12.0} rotationY={0} />
+          <GazeboGLB position={[0, 0, 0]} scale={12.0} rotationY={0} />
         ) : null}
 
 
 
         <group>
-          <MountainGLB position={[-MOUNTAIN_X, 0.0, 0]} scale={35.0} rotationY={(idx % 2 === 0) ? 0 : Math.PI} />
-          <MountainGLB position={[ MOUNTAIN_X, 0.0, 0]} scale={35.0} rotationY={(idx % 2 === 0) ? Math.PI : 0} />
+          <group ref={leftMountainRef}>
+            <MountainGLB position={[-(MOUNTAIN_X - 26.35), 30.0, 0]} scale={[55.0, 110.0, 110.0]} rotationY={(idx % 2 === 0) ? 0 : Math.PI} />
+          </group>
+          <group ref={rightMountainRef}>
+            <MountainGLB position={[ (MOUNTAIN_X - 26.35), 30.0, 0]} scale={[55.0, 110.0, 110.0]} rotationY={(idx % 2 === 0) ? Math.PI : 0} />
+          </group>
         </group>
     </group>
   );
@@ -130,11 +336,24 @@ function Scene(props: {
   onMonument: () => void;
   onEnemyKilled: (kind: EnemyKind) => void;
 }) {
-  const playerPosRef = useRef(new THREE.Vector3(0, 0.6, 0));
+  const playerPosRef = useRef(new THREE.Vector3(0, 0, 0));
+    const mountainRootsRef = useRef<any[]>([]);
+
+    const mountainChunkMapRef = useRef<Map<number, any[]>>(new Map());
+    
+    const tmpMountainRootsRef = useRef<any[]>([]);
+const onMountains = useCallback((idx: number, roots: any[]) => {
+      if (roots && roots.length) mountainChunkMapRef.current.set(idx, roots);
+      else mountainChunkMapRef.current.delete(idx);
+      const flat: any[] = [];
+      for (const arr of mountainChunkMapRef.current.values()) flat.push(...arr);
+      mountainRootsRef.current = flat;
+    }, []);
     const showGazebo = Math.abs(playerPosRef.current.z) < 90;
   const simAcc = useRef(0);
     const moveVelRef = useRef({ x: 0, y: 0 });
   const hadRuntimeErr = useRef(false);
+    const lastMountainCountRef = useRef(-1);
 
   const [chunkTick, setChunkTick] = useState(0);
   const baseChunkRef = useRef(0);
@@ -285,7 +504,23 @@ function Scene(props: {
             nearPodiumBoxes.push(b);
           }
           resolveCircleAABBs(p, PLAYER_RADIUS, nearPodiumBoxes);
-        spawnT.current += stepDt;
+                        const mcnt = mountainRootsRef.current.length;
+            if (mcnt !== lastMountainCountRef.current) {
+              lastMountainCountRef.current = mcnt;
+              if (false) console.log('[BVH] mountainRoots', { count: mcnt });
+            }
+
+            const curChunkIdx = Math.floor((-p.z) / CHUNK_LEN);
+            const tmp = tmpMountainRootsRef.current;
+            tmp.length = 0;
+            const a0 = mountainChunkMapRef.current.get(curChunkIdx);
+            const a1 = mountainChunkMapRef.current.get(curChunkIdx - 1);
+            const a2 = mountainChunkMapRef.current.get(curChunkIdx + 1);
+            if (a0) tmp.push(...a0);
+            if (a1) tmp.push(...a1);
+            if (a2) tmp.push(...a2);
+            resolveSphereMeshBVH(p, PLAYER_RADIUS, tmp);
+spawnT.current += stepDt;
         if (spawnT.current >= 1.0) {
           spawnT.current = 0;
           const ahead = p.z - rand(18, 55);
@@ -399,7 +634,7 @@ function Scene(props: {
       {chunks.map((i) => {
         const chunkIdx = baseChunk + i;
         const centerZ = -(chunkIdx * CHUNK_LEN) - (CHUNK_LEN / 2);
-        return <Chunk key={`c_${chunkIdx}`} idx={chunkIdx} centerZ={centerZ} showGazebo={showGazebo} />;
+        return <Chunk key={`c_${chunkIdx}`} idx={chunkIdx} centerZ={centerZ} showGazebo={showGazebo} onMountains={onMountains} />;
       })}
 
       {podiums.map((pd) => {

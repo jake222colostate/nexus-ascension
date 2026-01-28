@@ -47,3 +47,7 @@ assets/.ipynb_checkpoints/
 *.bak.*
 19
 backups/
+
+# local volume / persistence markers
+.PERSISTENCE_OK
+.VOLUME_WRITE_TEST
