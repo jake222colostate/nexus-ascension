@@ -253,13 +253,12 @@ function makeEnemy(kind: EnemyKind, z: number): Enemy {
   return { id, kind, pos: new THREE.Vector3(x, kind === 'boss' ? 1.2 : 0.7, z), hp, maxHp, spd };
 }
 
-function Chunk(props: { idx: number; centerZ: number; showGazebo?: boolean; onMountains?: (idx: number, roots: any[]) => void; onGazebo?: (roots: any[]) => void }) {
+function Chunk(props: { idx: number; centerZ: number; showGazebo?: boolean; onMountains?: (idx: number, roots: any[]) => void; onGazebo?: (roots: any[]) => void; onTrees?: (idx: number, boxes: AABB2[]) => void; }) {
   const { idx, centerZ } = props;
 
 
   const leftMountainRef = useRef<any>(null);
   const rightMountainRef = useRef<any>(null);
-
   const forestTrees = useMemo(() => {
     const rng = (k: number) => {
       let t = k >>> 0;
@@ -286,6 +285,28 @@ function Chunk(props: { idx: number; centerZ: number; showGazebo?: boolean; onMo
     }
     return out;
   }, [idx]);
+
+  const trunkBoxes = useMemo<AABB2[]>(() => {
+    const out: AABB2[] = [];
+    for (const t of (forestTrees as any[])) {
+      const visScale = (t.s ?? 1) * 7;     // matches render scale={t.s * 7}
+      const r = 0.05 * visScale;          // trunk radius in XZ (tune if needed)
+      const wz = centerZ + (t.z ?? 0);     // world Z
+      out.push({
+        id: String(t.id),
+        minX: (t.x ?? 0) - r,
+        maxX: (t.x ?? 0) + r,
+        minZ: wz - r,
+        maxZ: wz + r,
+      });
+    }
+    return out;
+  }, [forestTrees, centerZ]);
+
+  useEffect(() => {
+    props.onTrees?.(idx, trunkBoxes);
+    return () => { props.onTrees?.(idx, []); };
+  }, [idx, trunkBoxes, props.onTrees]);
 
   const gazeboRef = useRef<any>(null);
 
@@ -332,8 +353,7 @@ function Chunk(props: { idx: number; centerZ: number; showGazebo?: boolean; onMo
       if (props.idx === 0) props.onGazebo?.([]);
     };
   }, [props.idx, props.onMountains]);
-
-  return (
+return (
     <group position={[0, 0, centerZ]}>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
         <planeGeometry args={[PATH_W, CHUNK_LEN]} />
@@ -402,7 +422,14 @@ const onMountains = useCallback((idx: number, roots: any[]) => {
       for (const arr of mountainChunkMapRef.current.values()) flat.push(...arr);
       mountainRootsRef.current = flat;
     }, []);
-  const onGazebo = useCallback((roots: any[]) => { gazeboRootsRef.current = roots || []; }, []);
+    const treeChunkMapRef = useRef<Map<number, AABB2[]>>(new Map());
+
+  
+  const onTrees = useCallback((idx: number, boxes: AABB2[]) => {
+    if (boxes && boxes.length) treeChunkMapRef.current.set(idx, boxes);
+    else treeChunkMapRef.current.delete(idx);
+  }, []);
+const onGazebo = useCallback((roots: any[]) => { gazeboRootsRef.current = roots || []; }, []);
     const showGazebo = Math.abs(playerPosRef.current.z) < 90;
   const simAcc = useRef(0);
     const moveVelRef = useRef({ x: 0, y: 0 });
@@ -557,7 +584,19 @@ const onMountains = useCallback((idx: number, roots: any[]) => {
             nearPodiumBoxes.push(b);
           }
           resolveCircleAABBs(p, PLAYER_RADIUS, nearPodiumBoxes);
-                        const mcnt = mountainRootsRef.current.length;
+                        
+          const nearTreeBoxes: AABB2[] = [];
+          const curT = Math.floor((-p.z) / CHUNK_LEN);
+          const t0 = treeChunkMapRef.current.get(curT);
+          const t1 = treeChunkMapRef.current.get(curT - 1);
+          const t2 = treeChunkMapRef.current.get(curT + 1);
+          if (t0) nearTreeBoxes.push(...t0);
+          if (t1) nearTreeBoxes.push(...t1);
+          if (t2) nearTreeBoxes.push(...t2);
+          if (nearTreeBoxes.length) if (p.y <= 0.55) {
+            resolveCircleAABBs(p, PLAYER_RADIUS, nearTreeBoxes);
+          }
+const mcnt = mountainRootsRef.current.length;
             if (mcnt !== lastMountainCountRef.current) {
               lastMountainCountRef.current = mcnt;
               if (false) console.log('[BVH] mountainRoots', { count: mcnt });
@@ -609,7 +648,19 @@ spawnT.current += stepDt;
                 const ep = np;
                 resolveCircleAABBs(ep, ENEMY_RADIUS, nearPodiumBoxes);
                 
-                  resolveSphereMeshBVH(ep, ENEMY_RADIUS, tmp);                  if (gazeboRootsRef.current.length) resolveSphereMeshBVH(ep, ENEMY_RADIUS, gazeboRootsRef.current);
+                  
+                  const eCurT = Math.floor((-ep.z) / CHUNK_LEN);
+                  const eTree: AABB2[] = [];
+                  const et0 = treeChunkMapRef.current.get(eCurT);
+                  const et1 = treeChunkMapRef.current.get(eCurT - 1);
+                  const et2 = treeChunkMapRef.current.get(eCurT + 1);
+                  if (et0) eTree.push(...et0);
+                  if (et1) eTree.push(...et1);
+                  if (et2) eTree.push(...et2);
+                  if (eTree.length) if (ep.y <= 0.55) {
+                  resolveCircleAABBs(ep, ENEMY_RADIUS, eTree);
+                }
+resolveSphereMeshBVH(ep, ENEMY_RADIUS, tmp);                  if (gazeboRootsRef.current.length) resolveSphereMeshBVH(ep, ENEMY_RADIUS, gazeboRootsRef.current);
 return { ...e, pos: ep };
             }
             return e;
@@ -690,7 +741,7 @@ return { ...e, pos: ep };
       {chunks.map((i) => {
         const chunkIdx = baseChunk + i;
         const centerZ = -(chunkIdx * CHUNK_LEN) - (CHUNK_LEN / 2);
-        return <Chunk key={`c_${chunkIdx}`} idx={chunkIdx} centerZ={centerZ} showGazebo={showGazebo} onMountains={onMountains}  onGazebo={onGazebo} />;
+        return <Chunk key={`c_${chunkIdx}`} idx={chunkIdx} centerZ={centerZ} showGazebo={showGazebo} onMountains={onMountains}  onGazebo={onGazebo} onTrees={onTrees} />;
       })}
 
       {podiums.map((pd) => {
