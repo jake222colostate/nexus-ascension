@@ -66,6 +66,14 @@ function GazeboGLB(props: { position: [number, number, number]; scale?: number; 
   const { scene } = useGLTF(GAZEBO_URL);
   const obj = useMemo(() => {
     const c: any = scene.clone(true);
+    // build BVH for gazebo meshes
+    try {
+      c.traverse((m: any) => {
+        if (!m?.isMesh || !m.geometry) return;
+        const g: any = m.geometry;
+        if (!g.boundsTree) g.boundsTree = new MeshBVH(g);
+      });
+    } catch {}
     try {
       const box = new THREE.Box3().setFromObject(c);
       const minY = box?.min?.y;
@@ -212,12 +220,13 @@ function makeEnemy(kind: EnemyKind, z: number): Enemy {
   return { id, kind, pos: new THREE.Vector3(x, kind === 'boss' ? 1.2 : 0.7, z), hp, maxHp, spd };
 }
 
-function Chunk(props: { idx: number; centerZ: number; showGazebo?: boolean; onMountains?: (idx: number, roots: any[]) => void }) {
+function Chunk(props: { idx: number; centerZ: number; showGazebo?: boolean; onMountains?: (idx: number, roots: any[]) => void; onGazebo?: (roots: any[]) => void }) {
   const { idx, centerZ } = props;
 
 
   const leftMountainRef = useRef<any>(null);
   const rightMountainRef = useRef<any>(null);
+  const gazeboRef = useRef<any>(null);
 
   useEffect(() => {
     let alive = true;
@@ -225,6 +234,8 @@ function Chunk(props: { idx: number; centerZ: number; showGazebo?: boolean; onMo
     const tick = () => {
       if (!alive) return;
       const roots = [leftMountainRef.current, rightMountainRef.current].filter(Boolean);
+      const gz = (props.idx === 0 && !!props.showGazebo) ? gazeboRef.current : null;
+      if (props.idx === 0) props.onGazebo?.(gz ? [gz] : []);
       if (roots.length) {
         props.onMountains?.(props.idx, roots);
                 if (false) console.log('[BVH] registerChunk', { idx: props.idx, roots: roots.length });
@@ -257,6 +268,7 @@ function Chunk(props: { idx: number; centerZ: number; showGazebo?: boolean; onMo
     return () => {
       alive = false;
       props.onMountains?.(props.idx, []);
+      if (props.idx === 0) props.onGazebo?.([]);
     };
   }, [props.idx, props.onMountains]);
 
@@ -273,7 +285,9 @@ function Chunk(props: { idx: number; centerZ: number; showGazebo?: boolean; onMo
       </mesh>
 
         {(idx === 0 && !!props.showGazebo) ? (
-          <GazeboGLB position={[0, 0, 0]} scale={12.0} rotationY={0} />
+          <group ref={gazeboRef}>
+            <GazeboGLB position={[0, 0, 0]} scale={12.0} rotationY={Math.PI} />
+          </group>
         ) : null}
 
 
@@ -304,6 +318,7 @@ function Scene(props: {
 }) {
   const playerPosRef = useRef(new THREE.Vector3(0, 0, 0));
     const mountainRootsRef = useRef<any[]>([]);
+  const gazeboRootsRef = useRef<any[]>([]);
 
     const mountainChunkMapRef = useRef<Map<number, any[]>>(new Map());
     
@@ -315,6 +330,7 @@ const onMountains = useCallback((idx: number, roots: any[]) => {
       for (const arr of mountainChunkMapRef.current.values()) flat.push(...arr);
       mountainRootsRef.current = flat;
     }, []);
+  const onGazebo = useCallback((roots: any[]) => { gazeboRootsRef.current = roots || []; }, []);
     const showGazebo = Math.abs(playerPosRef.current.z) < 90;
   const simAcc = useRef(0);
     const moveVelRef = useRef({ x: 0, y: 0 });
@@ -485,6 +501,7 @@ const onMountains = useCallback((idx: number, roots: any[]) => {
             if (a1) tmp.push(...a1);
             if (a2) tmp.push(...a2);
             resolveSphereMeshBVH(p, PLAYER_RADIUS, tmp);
+            if (gazeboRootsRef.current.length) resolveSphereMeshBVH(p, PLAYER_RADIUS, gazeboRootsRef.current);
 spawnT.current += stepDt;
         if (spawnT.current >= 1.0) {
           spawnT.current = 0;
@@ -520,7 +537,8 @@ spawnT.current += stepDt;
                 const ep = np;
                 resolveCircleAABBs(ep, ENEMY_RADIUS, nearPodiumBoxes);
                 
-                  resolveSphereMeshBVH(ep, ENEMY_RADIUS, tmp);return { ...e, pos: ep };
+                  resolveSphereMeshBVH(ep, ENEMY_RADIUS, tmp);                  if (gazeboRootsRef.current.length) resolveSphereMeshBVH(ep, ENEMY_RADIUS, gazeboRootsRef.current);
+return { ...e, pos: ep };
             }
             return e;
           });
@@ -600,7 +618,7 @@ spawnT.current += stepDt;
       {chunks.map((i) => {
         const chunkIdx = baseChunk + i;
         const centerZ = -(chunkIdx * CHUNK_LEN) - (CHUNK_LEN / 2);
-        return <Chunk key={`c_${chunkIdx}`} idx={chunkIdx} centerZ={centerZ} showGazebo={showGazebo} onMountains={onMountains} />;
+        return <Chunk key={`c_${chunkIdx}`} idx={chunkIdx} centerZ={centerZ} showGazebo={showGazebo} onMountains={onMountains}  onGazebo={onGazebo} />;
       })}
 
       {podiums.map((pd) => {
