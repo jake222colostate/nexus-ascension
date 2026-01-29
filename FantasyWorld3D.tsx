@@ -24,6 +24,8 @@ const GRASS_W = 30;
 const MOUNTAIN_X = 88;
 
 
+
+const TREE_Y = ((0.02 - 4.0) + 2.0) + 2.0;
 const SPAWN_MAX_Z = 6.0; // cannot go behind spawn beyond this (+Z)
 const PLAYER_RADIUS = 0.55;
 const ENEMY_RADIUS = 0.55;
@@ -33,8 +35,14 @@ const SHOW_DEBUG_WALL = false; // TEMP: set false after you confirm placement
 const MOUNTAIN_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/mountain_v2.glb';
 
 const GAZEBO_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/spawn_gazebo.glb';
+
+const FOREST_TREE_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/forest_tree.glb';
 useGLTF.preload(MOUNTAIN_URL);
 useGLTF.preload(GAZEBO_URL);
+
+useGLTF.preload(FOREST_TREE_URL);
+const FOREST_FOREST_TREE_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/forest_tree.glb';
+useGLTF.preload(FOREST_FOREST_TREE_URL);
 
 function MountainGLB(props: { position: [number, number, number]; scale?: number | [number, number, number]; rotationY?: number }) {
   const { scene } = useGLTF(MOUNTAIN_URL);
@@ -93,8 +101,33 @@ function GazeboGLB(props: { position: [number, number, number]; scale?: number; 
     />
   );
 }
+function ForestTreeGLB(props: { position: [number, number, number]; scale?: number; rotationY?: number }) {
+  const { scene } = useGLTF(FOREST_FOREST_TREE_URL);
 
+  const memo = useMemo(() => {
+    const c: any = scene.clone(true);
+    let minY = 0;
+    try {
+      const box = new THREE.Box3().setFromObject(c);
+      const v = box?.min?.y;
+      if (typeof v === 'number' && isFinite(v)) minY = v;
+    } catch {}
+    return { obj: c as THREE.Object3D, minY };
+  }, [scene]);
 
+  const s = (props.scale ?? 1);
+  const sy = (typeof s === 'number') ? s : 1;
+  const y = props.position[1] - (memo.minY * sy);
+
+  return (
+    <primitive
+      object={memo.obj}
+      position={[props.position[0], y, props.position[2]]}
+      scale={s}
+      rotation={[0, props.rotationY ?? 0, 0]}
+    />
+  );
+}
 function clamp(v: number, lo: number, hi: number) { return Math.max(lo, Math.min(hi, v)); }
 function rand(a: number, b: number) { return a + Math.random() * (b - a); }
 
@@ -226,6 +259,34 @@ function Chunk(props: { idx: number; centerZ: number; showGazebo?: boolean; onMo
 
   const leftMountainRef = useRef<any>(null);
   const rightMountainRef = useRef<any>(null);
+
+  const forestTrees = useMemo(() => {
+    const rng = (k: number) => {
+      let t = k >>> 0;
+      return () => {
+        t = (t + 0x6D2B79F5) >>> 0;
+        let x = Math.imul(t ^ (t >>> 15), 1 | t);
+        x ^= x + Math.imul(x ^ (x >>> 7), 61 | x);
+        return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
+      };
+    };
+    const r = rng((idx + 1) * 1337);
+    const out: { id: string; x: number; z: number; s: number; ry: number }[] = [];
+    const sidePad = PATH_W * 0.5 + 0.6;
+    const edgeMax = GRASS_W * 0.5 - 1.6;
+    const n = 18;
+    for (let i = 0; i < n; i++) {
+      const side = (r() < 0.5 ? -1 : 1);
+      const x = side * (sidePad + (edgeMax - sidePad) * Math.pow(r(), 0.55));
+      const z = -CHUNK_LEN * 0.5 + CHUNK_LEN * r();
+      const s0 = 0.85 + 0.55 * r();
+      const s = Math.max(0.75, Math.min(1.35, s0));
+      const ry = (r() * Math.PI * 2);
+      out.push({ id: `ft_${idx}_${i}`, x, z, s, ry });
+    }
+    return out;
+  }, [idx]);
+
   const gazeboRef = useRef<any>(null);
 
   useEffect(() => {
@@ -283,6 +344,17 @@ function Chunk(props: { idx: number; centerZ: number; showGazebo?: boolean; onMo
         <planeGeometry args={[GRASS_W, CHUNK_LEN]} />
         <meshStandardMaterial color={'#3a4f3a'} />
       </mesh>
+
+      {/* Forest trees */}
+      {forestTrees.map(t => (
+        <ForestTreeGLB
+          key={t.id}
+          position={[t.x, TREE_Y, t.z]}
+          scale={t.s * 7}
+          rotationY={t.ry}
+        />
+      ))}
+
 
         {(idx === 0 && !!props.showGazebo) ? (
           <group ref={gazeboRef}>
