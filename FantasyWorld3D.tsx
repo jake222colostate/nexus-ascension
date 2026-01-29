@@ -1,4 +1,8 @@
 import React, {useEffect, useMemo, useRef, useState, Suspense, useCallback} from 'react';
+import { useTexture } from '@react-three/drei';
+
+import { useThree } from '@react-three/fiber';
+
 import { MeshBVH, acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from "three-mesh-bvh";
 import { View, StyleSheet, useWindowDimensions} from 'react-native';
 import { Canvas, useFrame } from '@react-three/fiber/native';
@@ -36,6 +40,8 @@ const MOUNTAIN_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object
 
 const GAZEBO_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/spawn_gazebo.glb';
 
+
+  const SKYBOX_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/skybox1.jpg';
 const FOREST_TREE_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/forest_tree.glb';
 useGLTF.preload(MOUNTAIN_URL);
 useGLTF.preload(GAZEBO_URL);
@@ -68,6 +74,34 @@ function MountainGLB(props: { position: [number, number, number]; scale?: number
     />
   );
 }
+  function SkyboxAndFog() {
+    const { scene } = useThree();
+    const tex: any = useTexture(SKYBOX_URL);
+
+    useEffect(() => {
+      if (!tex) return;
+      try {
+        if ('colorSpace' in tex && (THREE as any).SRGBColorSpace) tex.colorSpace = (THREE as any).SRGBColorSpace;
+        else if ((THREE as any).sRGBEncoding) tex.encoding = (THREE as any).sRGBEncoding;
+      } catch {}
+
+      try { tex.mapping = (THREE as any).EquirectangularReflectionMapping; } catch {}
+
+      scene.background = tex;
+      scene.environment = tex;
+
+      return () => {
+        try {
+          if (scene.background === tex) scene.background = null as any;
+          if (scene.environment === tex) scene.environment = null as any;
+        } catch {}
+      };
+    }, [tex, scene]);
+
+    return null;
+  }
+
+
 
 
 function GazeboGLB(props: { position: [number, number, number]; scale?: number; rotationY?: number }) {
@@ -721,11 +755,12 @@ return { ...e, pos: ep };
   const chunks = useMemo(() => Array.from({ length: CHUNK_BACK + CHUNK_AHEAD + 1 }, (_, i) => i - CHUNK_BACK), []);
   const baseChunk = baseChunkRef.current;
 
-  const fogColor = '#0a0f18';
+  const fogColor = '#bfefff';
 
   return (
-  <>
-      <fog attach="fog" args={[fogColor, 6, 110]} />
+    <>
+      <SkyboxAndFog />
+<fog attach="fog" args={["#bfefff", 12, 180]} />
       <ambientLight intensity={0.65} />
       <directionalLight position={[6, 10, 6]} intensity={1.35} />
       <directionalLight position={[-6, 8, -6]} intensity={0.55} />
