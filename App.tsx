@@ -6,6 +6,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import FantasyWorld3D from './FantasyWorld3D';
+import SkybaseWorld3D from './SkybaseWorld3D';
 
 type RootStackParamList = {
   Home: undefined;
@@ -35,6 +36,10 @@ const K = {
   sDmgLvl: 'na:sDmgLvl',
   sRateLvl: 'na:sRateLvl',
   sAutoAtkUnlocked: 'na:sAutoAtkUnlocked',
+  sL1ReactorLvl: 'na:sL1ReactorLvl',
+  sL1TurretLvl: 'na:sL1TurretLvl',
+  sL1ShieldLvl: 'na:sL1ShieldLvl',
+  sL1DroneLvl: 'na:sL1DroneLvl',
 
   boostFantasyToSky: 'na:boostFantasyToSky',
   boostSkyToFantasy: 'na:boostSkyToFantasy',
@@ -991,23 +996,41 @@ function CombatWorld({ cfg }: { cfg: CombatConfig }) {
 
 
 function SkybaseScreen() {
+  const energy = useStoredNumber(K.energy, 0);
+  const [upOpen, setUpOpen] = useState(false);
+
   return (
-    <CombatWorld
-      cfg={{
-        label: 'Skybase',
-        currencyName: 'Energy',
-        currencyKey: K.energy,
-        tapLvlKey: K.energyTapLvl,
-        killLvlKey: K.energyKillLvl,
-        autoLvlKey: K.energyAutoLvl,
-        dmgLvlKey: K.sDmgLvl,
-        rateLvlKey: K.sRateLvl,
-        autoAtkKey: K.sAutoAtkUnlocked,
-        tierKey: K.skyTier,
-        monumentsKey: K.skyMonuments,
-        killBase: 5,
-      }}
-    />
+    <SafeAreaView style={styles.safe}>
+      <View style={{ flex: 1 }}>
+        <SkybaseWorld3D layer={1} layerHeight={0} />
+
+        <View pointerEvents="box-none" style={{ position: 'absolute', top: 0, left: 0, right: 0, padding: 14 }}>
+          <Text style={{ color: '#fff', fontSize: 18, fontWeight: '900' }}>Skybase</Text>
+          <Text style={{ color: '#cfcfcf', marginTop: 4, fontSize: 12 }}>Energy {formatInt(energy.value)}</Text>
+        </View>
+
+        <View pointerEvents="box-none" style={{ position: 'absolute', left: 14, right: 14, bottom: 18 }}>
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <Pressable style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.12)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)', paddingVertical: 12, paddingHorizontal: 14, borderRadius: 12, alignItems: 'center' }} onPress={() => setUpOpen(true)}>
+              <Text style={{ color: '#fff', fontWeight: '900' }}>Upgrades</Text>
+            </Pressable>
+            <Pressable style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.12)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)', paddingVertical: 12, paddingHorizontal: 14, borderRadius: 12, alignItems: 'center' }} onPress={() => energy.add(1)}>
+              <Text style={{ color: '#fff', fontWeight: '900' }}>Tap +1</Text>
+            </Pressable>
+          </View>
+        </View>
+
+        <Modal visible={upOpen} transparent animationType="fade" onRequestClose={() => setUpOpen(false)}>
+          <Pressable style={styles.modalBackdrop} onPress={() => setUpOpen(false)}>
+            <View style={styles.modalCard}>
+              <Text style={styles.modalTitle}>Skybase Upgrades</Text>
+              <Text style={styles.modalSub}>Layer 1 coming next.</Text>
+              <Text style={styles.modalHint}>This modal confirms HUD overlay + touch layering.</Text>
+            </View>
+          </Pressable>
+        </Modal>
+      </View>
+    </SafeAreaView>
   );
 }
 
