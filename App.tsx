@@ -6,11 +6,15 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import FantasyWorld3D from './FantasyWorld3D';
+import GameHUD from './GameHUD';
+import FalloutLoaderOverlay from './FalloutLoaderOverlay';
 import SkybaseWorld3D from './SkybaseWorld3D';
+import WorldHUD from './WorldHUD';
 
 type RootStackParamList = {
   Home: undefined;
   Fantasy: undefined;
+  LoadingFantasy: undefined;
   Skybase: undefined;
   Hub: undefined;
   Settings: undefined;
@@ -109,7 +113,7 @@ function HomeScreen({ navigation }: any) {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Quick Start</Text>
 
-          <Pressable style={styles.buttonPrimary} onPress={() => navigation.navigate('Fantasy')}>
+          <Pressable style={styles.buttonPrimary} onPress={() => navigation.navigate('LoadingFantasy')}>
             <Text style={styles.buttonPrimaryText}>Play (Fantasy Valley)</Text>
           </Pressable>
 
@@ -219,7 +223,8 @@ function CombatWorld({ cfg }: { cfg: CombatConfig }) {
   const monuments = useStoredNumber(cfg.monumentsKey, 0);
 
   const [toast, setToast] = useState<string>('');
-  const [devOpen, setDevOpen] = useState(false);
+    const [upOpen, setUpOpen] = useState(false);
+    const [devOpen, setDevOpen] = useState(false);
   const [uiTick, setUiTick] = useState(0);
 
   const toastTimer = useRef<any>(null);
@@ -425,7 +430,40 @@ function CombatWorld({ cfg }: { cfg: CombatConfig }) {
   const costRate = powCost(45, 1.25, rateLvl.value);
   const costAutoAtk = autoAtkUnlocked.value ? 0 : 150;
 
-  async function buy(kind: 'tap' | 'kill' | 'auto' | 'dmg' | 'rate' | 'autoatk') {
+  function fantasyUpgradesBody() {
+      const rows = [
+        { k: 'tap', name: 'Tap Power', lvl: tapLvl.value, cost: costTap },
+        { k: 'kill', name: 'Kill Bonus', lvl: killLvl.value, cost: costKill },
+        { k: 'auto', name: 'Auto Gain', lvl: autoLvl.value, cost: costAuto },
+        { k: 'dmg', name: 'Damage', lvl: dmgLvl.value, cost: costDmg },
+        { k: 'rate', name: 'Fire Rate', lvl: rateLvl.value, cost: costRate },
+      ] as const;
+
+      return (
+        <View>
+          {rows.map((r, ix) => (
+            <Pressable
+              key={ix}
+              style={{ borderRadius: 14, padding: 12, backgroundColor: '#1A2540', borderWidth: 1, borderColor: '#25365F', marginBottom: 10 }}
+              onPress={() => buy(r.k as any)}
+            >
+              <Text style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '900' }}>{r.name}  Lv {r.lvl}</Text>
+              <Text style={{ color: '#B8C0D6', fontSize: 12, marginTop: 4 }}>Cost: {formatInt(r.cost)}</Text>
+            </Pressable>
+          ))}
+
+          <Pressable
+            style={{ borderRadius: 14, padding: 12, backgroundColor: '#1A2540', borderWidth: 1, borderColor: '#25365F', marginBottom: 0 }}
+            onPress={() => buy('autoatk')}
+          >
+            <Text style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '900' }}>{autoAtkUnlocked.value ? 'Auto-Attack: Unlocked' : 'Auto-Attack: Unlock'}</Text>
+            <Text style={{ color: '#B8C0D6', fontSize: 12, marginTop: 4 }}>{autoAtkUnlocked.value ? 'Enabled for boss fights' : `Cost: ${formatInt(costAutoAtk)}`}</Text>
+          </Pressable>
+        </View>
+      );
+    }
+
+    async function buy(kind: 'tap' | 'kill' | 'auto' | 'dmg' | 'rate' | 'autoatk') {
     if (kind === 'tap' && currency.value >= costTap) {
       await currency.add(-costTap);
       await tapLvl.set(tapLvl.value + 1);
@@ -759,6 +797,7 @@ function CombatWorld({ cfg }: { cfg: CombatConfig }) {
     const [bossOpen, setBossOpen] = useState(false);
     const [bossMaxHp, setBossMaxHp] = useState(500);
     const [bossHp, setBossHp] = useState(500);
+      const [upOpen, setUpOpen] = useState(false);
 
     const killsRef = useRef<number>(0);
     const podiumsRef = useRef<number>(0);
@@ -885,6 +924,40 @@ function CombatWorld({ cfg }: { cfg: CombatConfig }) {
     const costRate = powCost(45, 1.25, rateLvl.value);
     const costAutoAtk = autoAtkUnlocked.value ? 0 : 150;
 
+    function fantasyUpgradesBody() {
+  const [upOpen, setUpOpen] = useState(false);
+      const rows = [
+        { k: 'tap', name: 'Tap Power', lvl: tapLvl.value, cost: costTap },
+        { k: 'kill', name: 'Kill Bonus', lvl: killLvl.value, cost: costKill },
+        { k: 'auto', name: 'Auto Gain', lvl: autoLvl.value, cost: costAuto },
+        { k: 'dmg', name: 'Damage', lvl: dmgLvl.value, cost: costDmg },
+        { k: 'rate', name: 'Fire Rate', lvl: rateLvl.value, cost: costRate },
+      ] as const;
+
+      return (
+        <View>
+          {rows.map((r, ix) => (
+            <Pressable
+              key={ix}
+              style={{ borderRadius: 14, padding: 12, backgroundColor: '#1A2540', borderWidth: 1, borderColor: '#25365F', marginBottom: 10 }}
+              onPress={() => buy(r.k as any)}
+            >
+              <Text style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '900' }}>{r.name}  Lv {r.lvl}</Text>
+              <Text style={{ color: '#B8C0D6', fontSize: 12, marginTop: 4 }}>Cost: {formatInt(r.cost)}</Text>
+            </Pressable>
+          ))}
+
+          <Pressable
+            style={{ borderRadius: 14, padding: 12, backgroundColor: '#1A2540', borderWidth: 1, borderColor: '#25365F', marginBottom: 0 }}
+            onPress={() => buy('autoatk')}
+          >
+            <Text style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '900' }}>{autoAtkUnlocked.value ? 'Auto-Attack: Unlocked' : 'Auto-Attack: Unlock'}</Text>
+            <Text style={{ color: '#B8C0D6', fontSize: 12, marginTop: 4 }}>{autoAtkUnlocked.value ? 'Enabled for boss fights' : `Cost: ${formatInt(costAutoAtk)}`}</Text>
+          </Pressable>
+        </View>
+      );
+    }
+
     async function buy(kind: 'tap' | 'kill' | 'auto' | 'dmg' | 'rate' | 'autoatk') {
       if (kind === 'tap' && currency.value >= costTap) { await currency.add(-costTap); await tapLvl.set(tapLvl.value + 1); }
       if (kind === 'kill' && currency.value >= costKill) { await currency.add(-costKill); await killLvl.set(killLvl.value + 1); }
@@ -939,7 +1012,7 @@ function CombatWorld({ cfg }: { cfg: CombatConfig }) {
           </View>
         </Modal>
 
-        <View style={{ flex: 1 }}>
+        <View style={{ flex: 1, width: '100%', height: '100%', alignSelf: 'stretch' }}>
           <FantasyWorld3D
             walking={walking}
             shootPulse={shootPulse}
@@ -950,50 +1023,48 @@ function CombatWorld({ cfg }: { cfg: CombatConfig }) {
             onEnemyKilled={(k) => onEnemyKilled(k)}
           />
 
-          <View pointerEvents="box-none" style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, padding: 14, justifyContent: 'space-between' }}>
-            <View style={{ paddingTop: 8, flexDirection: 'row', justifyContent: 'space-between', gap: 10 }}>
-              <View style={{ flex: 1 }}>
-                <Text style={{ color: '#fff', fontSize: 18, fontWeight: '800' }}>Fantasy Valley</Text>
-                <Text style={{ color: '#cfcfcf', marginTop: 4, fontSize: 12 }}>Mana {formatInt(currency.value)} • +{autoPerSec.toFixed(2)}/s</Text>
-              </View>
-              <View style={{ alignItems: 'flex-end' }}>
-                <Text style={{ color: '#fff', fontSize: 12, marginTop: 2, fontWeight: '700' }}>DPS {dps.toFixed(1)}</Text>
-                <Text style={{ color: '#fff', fontSize: 12, marginTop: 2, fontWeight: '700' }}>Tier {tier.value} • Mon {monuments.value}</Text>
-                <Text style={{ color: '#fff', fontSize: 12, marginTop: 2, fontWeight: '700' }}>{killsRef.current} K • {podiumsRef.current} P</Text>
-              </View>
-            </View>
-
-            <View style={{ flexDirection: 'row', gap: 10, paddingBottom: 12 }}>
-              <Pressable style={{ backgroundColor: walking ? 'rgba(76,217,100,0.18)' : 'rgba(255,255,255,0.12)', borderWidth: 1, borderColor: walking ? 'rgba(76,217,100,0.35)' : 'rgba(255,255,255,0.18)', paddingVertical: 12, paddingHorizontal: 14, borderRadius: 12 }} onPressIn={() => setWalking(true)} onPressOut={() => setWalking(false)}>
-                <Text style={{ color: '#fff', fontWeight: '800' }}>{walking ? 'Walking…' : 'Hold to Walk'}</Text>
-              </Pressable>
-
-              <Pressable style={{ backgroundColor: 'rgba(255,255,255,0.12)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)', paddingVertical: 12, paddingHorizontal: 14, borderRadius: 12 }} onPress={() => setShootPulse((n) => n + 1)}>
-                <Text style={{ color: '#fff', fontWeight: '800' }}>Shoot</Text>
-              </Pressable>
-
-              <Pressable style={{ backgroundColor: 'rgba(255,255,255,0.12)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)', paddingVertical: 12, paddingHorizontal: 14, borderRadius: 12 }} onPress={() => currency.add(tapGain)}>
-                <Text style={{ color: '#fff', fontWeight: '800' }}>Tap +{tapGain}</Text>
-              </Pressable>
-
-              <Pressable style={{ backgroundColor: 'rgba(255,255,255,0.12)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)', paddingVertical: 12, paddingHorizontal: 14, borderRadius: 12 }} onPress={() => buy('autoatk')}>
-                <Text style={{ color: '#fff', fontWeight: '800' }}>{autoAtkUnlocked.value ? 'Auto ✓' : `Auto ${formatInt(costAutoAtk)}`}</Text>
-              </Pressable>
-            </View>
-
-            {toast ? (
-              <View pointerEvents="none" style={{ position: 'absolute', left: 14, right: 14, bottom: 84, padding: 12, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.65)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' }}>
-                <Text style={{ color: '#fff', fontWeight: '800', textAlign: 'center' }}>{toast}</Text>
-              </View>
-            ) : null}
+          <View style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 }} pointerEvents="box-none">
+          <GameHUD
+              title={'Fantasy Valley'}
+              leftSub={`Mana ${formatInt(currency.value)} • +${autoPerSec.toFixed(2)}/s`}
+              rightLines={[`DPS ${dps.toFixed(1)}`, `Tier ${tier.value} • Mon ${monuments.value}`, `${killsRef.current} K • ${podiumsRef.current} P`]}
+              buttons={[
+                { kind: 'hold', label: 'Hold to Walk', activeLabel: 'Walking…', active: walking, onHoldStart: () => setWalking(true), onHoldEnd: () => setWalking(false) },
+                { kind: 'press', label: 'Shoot', onPress: () => setShootPulse((n) => n + 1) },
+                { kind: 'press', label: `Tap +${tapGain}`, onPress: () => currency.add(tapGain) },
+              ]}
+              onOpenUpgrades={() => setUpOpen(true)}
+              toast={toast}
+              upgradesOpen={upOpen}
+              onCloseUpgrades={() => setUpOpen(false)}
+              upgradesTitle={'Fantasy Upgrades'}
+              upgradesBody={fantasyUpgradesBody()}
+            />
           </View>
-        </View>
-      </SafeAreaView>
+          </View>
+        </SafeAreaView>
     );
   }
 
 
 
+
+function LoadingFantasyScreen({ navigation }: any) {
+  const MOUNTAIN_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/mountain_v2.glb';
+  const GAZEBO_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/spawn_gazebo.glb';
+
+  return (
+    <View style={{ flex: 1, backgroundColor: '#0a0f18' }}>
+      <FalloutLoaderOverlay
+        lootUrl={GAZEBO_URL}
+        preloadUrls={[MOUNTAIN_URL, GAZEBO_URL, 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/forest_tree.glb', 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/skybox1.jpg']}
+        onDone={() => navigation.replace('Fantasy')}
+        title={'Loading Fantasy Valley…'}
+        subtitle={'Drag to rotate loot'}
+      />
+    </View>
+  );
+}
 
 function SkybaseScreen() {
   const energy = useStoredNumber(K.energy, 0);
@@ -1001,36 +1072,30 @@ function SkybaseScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <View style={{ flex: 1 }}>
+      <View style={{ flex: 1, width: '100%', height: '100%', alignSelf: 'stretch' }}>
         <SkybaseWorld3D layer={1} layerHeight={0} />
 
-        <View pointerEvents="box-none" style={{ position: 'absolute', top: 0, left: 0, right: 0, padding: 14 }}>
-          <Text style={{ color: '#fff', fontSize: 18, fontWeight: '900' }}>Skybase</Text>
-          <Text style={{ color: '#cfcfcf', marginTop: 4, fontSize: 12 }}>Energy {formatInt(energy.value)}</Text>
+        <View style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 }} pointerEvents="box-none">
+        <GameHUD
+            title={'Skybase'}
+            leftSub={`Energy ${formatInt(energy.value)}`}
+            rightLines={[]}
+            buttons={[
+              { kind: 'press', label: 'Tap +1', onPress: () => energy.add(1) },
+            ]}
+            onOpenUpgrades={() => setUpOpen(true)}
+            upgradesOpen={upOpen}
+            onCloseUpgrades={() => setUpOpen(false)}
+            upgradesTitle={'Skybase Upgrades'}
+            upgradesBody={(
+              <View>
+                <Text style={{ color: '#B8C0D6', fontSize: 12, lineHeight: 18 }}>Coming next: sci-fi upgrade tree mirroring Fantasy (tap, auto, damage, rate, unlocks).</Text>
+              </View>
+            )}
+          />
         </View>
-
-        <View pointerEvents="box-none" style={{ position: 'absolute', left: 14, right: 14, bottom: 18 }}>
-          <View style={{ flexDirection: 'row', gap: 10 }}>
-            <Pressable style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.12)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)', paddingVertical: 12, paddingHorizontal: 14, borderRadius: 12, alignItems: 'center' }} onPress={() => setUpOpen(true)}>
-              <Text style={{ color: '#fff', fontWeight: '900' }}>Upgrades</Text>
-            </Pressable>
-            <Pressable style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.12)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)', paddingVertical: 12, paddingHorizontal: 14, borderRadius: 12, alignItems: 'center' }} onPress={() => energy.add(1)}>
-              <Text style={{ color: '#fff', fontWeight: '900' }}>Tap +1</Text>
-            </Pressable>
-          </View>
         </View>
-
-        <Modal visible={upOpen} transparent animationType="fade" onRequestClose={() => setUpOpen(false)}>
-          <Pressable style={styles.modalBackdrop} onPress={() => setUpOpen(false)}>
-            <View style={styles.modalCard}>
-              <Text style={styles.modalTitle}>Skybase Upgrades</Text>
-              <Text style={styles.modalSub}>Layer 1 coming next.</Text>
-              <Text style={styles.modalHint}>This modal confirms HUD overlay + touch layering.</Text>
-            </View>
-          </Pressable>
-        </Modal>
-      </View>
-    </SafeAreaView>
+      </SafeAreaView>
   );
 }
 
@@ -1064,6 +1129,7 @@ export default function App() {
         }}
       >
         <Stack.Screen name="Home" component={HomeScreen} options={{ title: 'Nexus Ascension' }} />
+        <Stack.Screen name='LoadingFantasy' component={LoadingFantasyScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Fantasy" component={FantasyScreen} options={{ title: 'Fantasy Valley' }} />
         <Stack.Screen name="Skybase" component={SkybaseScreen} options={{ title: 'Skybase' }} />
         <Stack.Screen name="Hub" component={HubScreen} options={{ title: 'Hub' }} />

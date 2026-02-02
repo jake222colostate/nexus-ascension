@@ -166,8 +166,9 @@ export default function SkybaseWorld3D(props: { layer: number; layerHeight: numb
       onResponderTerminate={(e) => releaseTouches(e.nativeEvent.changedTouches)}
     >
       <Canvas
+          dpr={1}
         style={styles.canvas}
-        gl={{ antialias: true }}
+        gl={{ antialias: false, powerPreference: 'low-power' }}
         onCreated={({ gl }) => { try { (gl as any).setClearColor?.('#0a0f18', 1); } catch (e) {} }}
         camera={{ position: [0, 6, 18], fov: 60 }}
       >
