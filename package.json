@@ -30,7 +30,9 @@
     "three-mesh-bvh": "^0.8.3"
   },
   "devDependencies": {
+    "@gltf-transform/cli": "^4.3.0",
     "@types/react": "~19.1.0",
+    "meshoptimizer": "^1.0.1",
     "typescript": "~5.9.2"
   },
   "private": true

@@ -1,15 +1,31 @@
 import React, {useEffect, useMemo, useRef, useState, Suspense, useCallback} from 'react';
-import { MeshBVH } from "three-mesh-bvh";
+import { useTexture } from '@react-three/drei';
+
+import { useThree } from '@react-three/fiber';
+
+import { MeshBVH, acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from "three-mesh-bvh";
 import { View, StyleSheet, useWindowDimensions} from 'react-native';
 import { Canvas, useFrame } from '@react-three/fiber/native';
-import { useGLTF, useProgress } from '@react-three/drei/native';
+import { useGLTF, useProgress, Clone } from '@react-three/drei/native';
 import * as THREE from 'three';
+// === BVH PATCH (must run once, same THREE instance as R3F) ===
+(THREE.BufferGeometry as any).prototype.computeBoundsTree = computeBoundsTree;
+(THREE.BufferGeometry as any).prototype.disposeBoundsTree = disposeBoundsTree;
+(THREE.Mesh as any).prototype.raycast = acceleratedRaycast;
+
 
 type EnemyKind = 'enemy' | 'boss';
 type Enemy = { id: string; kind: EnemyKind; pos: THREE.Vector3; hp: number; maxHp: number; spd: number };
 type Projectile = { id: string; pos: THREE.Vector3; vel: THREE.Vector3; ttl: number };
 
 const CHUNK_LEN = 40;
+const PODIUM_TOP_Y = 2.00;
+
+const GAZEBO_LIFT = 4.0;
+const STAND_H = 1.15;
+const GAZEBO_BASE_Y = GAZEBO_LIFT + 0.35;
+const GAZEBO_PLATFORM_Y = GAZEBO_BASE_Y + 2.60;
+
 const CHUNK_BACK = 2;
 const CHUNK_AHEAD = 2;
 
@@ -18,65 +34,48 @@ const GRASS_W = 30;
 const MOUNTAIN_X = 88;
 
 
+
+const TREE_Y = ((0.02 - 4.0) + 2.0) + 2.0;
 const SPAWN_MAX_Z = 6.0; // cannot go behind spawn beyond this (+Z)
 const PLAYER_RADIUS = 0.55;
 const ENEMY_RADIUS = 0.55;
 const PODIUM_HALF = 1.1;
-const SHOW_DEBUG_WALL = true; // TEMP: set false after you confirm placement
+
+const SHOW_DEBUG_WALL = false;
+
+const SHOW_GAZEBO_MESH = true;
+const USE_GAZEBO_BVH = false;
+
 
 const MOUNTAIN_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/mountain_v2.glb';
 
 const GAZEBO_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/spawn_gazebo.glb';
+const PODIUM_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/podium_v1.glb';
+  const SKYBOX_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/skybox1.jpg';
+const FOREST_TREE_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/forest_tree.glb';
 useGLTF.preload(MOUNTAIN_URL);
 useGLTF.preload(GAZEBO_URL);
+useGLTF.preload(PODIUM_URL);
+
+useGLTF.preload(FOREST_TREE_URL);
+const FOREST_FOREST_TREE_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/forest_tree.glb';
+useGLTF.preload(FOREST_FOREST_TREE_URL);
 
 function MountainGLB(props: { position: [number, number, number]; scale?: number | [number, number, number]; rotationY?: number }) {
-  const loggedGeomRef = useRef(false);
   const { scene } = useGLTF(MOUNTAIN_URL);
-  const obj = useMemo(() => {
-    const c: any = scene.clone(true);
-    try {
-      const box = new THREE.Box3().setFromObject(c);
-      const minY = box?.min?.y;
-      if (typeof minY === 'number' && isFinite(minY) && Math.abs(minY) > 1e-5) {
-        // lift so the lowest vertex sits on y=0
-        c.position.y -= minY;
+
+  const obj = useMemo<THREE.Object3D>(() => {
+    const clone = scene.clone(true);
+    clone.traverse((m: any) => {
+      if (!m?.isMesh || !m.geometry) return;
+      const g: any = m.geometry;
+      if (!g.boundsTree) {
+        g.boundsTree = new MeshBVH(g);
       }
-    } catch {}
-    return c;
+    });
+    return clone;
   }, [scene]);
-  useEffect(() => {
-      console.log("[MountainGLB] loaded", { hasScene: !!scene, children: scene?.children?.length });
 
-      // BVH_BUILD_DEBUG: build BVHs for mountain meshes (tri-mesh collision support)
-      try {
-        const root: any = scene;
-        if (root) {
-          let meshCount = 0;
-          let bvhCount = 0;
-          root.traverse((m: any) => {
-              if (!m || !m.isMesh || !m.geometry) return;
-              meshCount++;
-              const g: any = m.geometry;
-
-              if (!loggedGeomRef.current) {
-                const posCount = g?.attributes?.position?.count ?? 0;
-                const triCount = g?.index?.count ? (g.index.count / 3) : (posCount / 3);
-                console.log('[MountainGLB] geom', { posCount, triCount });
-                loggedGeomRef.current = true;
-              }
-            if (!g.boundsTree) {
-              g.boundsTree = new MeshBVH(g);
-              bvhCount++;
-            }
-          });
-          if (false) console.log("[BVH] built", { meshCount, bvhCount });
-        }
-      } catch (e) {
-        if (false) console.log("[BVH] error", String(e));
-      }
-
-  }, [scene]);
   return (
     <primitive
       object={obj}
@@ -86,16 +85,54 @@ function MountainGLB(props: { position: [number, number, number]; scale?: number
     />
   );
 }
+  function SkyboxAndFog() {
+    const { scene } = useThree();
+    const tex: any = useTexture(SKYBOX_URL);
+
+    useEffect(() => {
+      if (!tex) return;
+      try {
+        if ('colorSpace' in tex && (THREE as any).SRGBColorSpace) tex.colorSpace = (THREE as any).SRGBColorSpace;
+        else if ((THREE as any).sRGBEncoding) tex.encoding = (THREE as any).sRGBEncoding;
+      } catch {}
+
+      try { tex.mapping = (THREE as any).EquirectangularReflectionMapping; } catch {}
+
+      scene.background = tex;
+      scene.environment = tex;
+
+      return () => {
+        try {
+          if (scene.background === tex) scene.background = null as any;
+          if (scene.environment === tex) scene.environment = null as any;
+        } catch {}
+      };
+    }, [tex, scene]);
+
+    return null;
+  }
+
+
 
 
 function GazeboGLB(props: { position: [number, number, number]; scale?: number; rotationY?: number }) {
-  const { scene } = useGLTF(GAZEBO_URL);
+  const gltf: any = useGLTF(GAZEBO_URL as any);
+  const scene: any = Array.isArray(gltf) ? gltf[0]?.scene : gltf?.scene;
+
   const obj = useMemo(() => {
     const c: any = scene.clone(true);
+    // build BVH for gazebo meshes
+    try {
+      c.traverse((m: any) => {
+        if (!m?.isMesh || !m.geometry) return;
+        const g: any = m.geometry;
+        if (!g.boundsTree) g.boundsTree = new MeshBVH(g);
+      });
+    } catch {}
     try {
       const box = new THREE.Box3().setFromObject(c);
       const minY = box?.min?.y;
-      if (typeof minY === 'number' && isFinite(minY) && Math.abs(minY) > 1e-5) {
+if (typeof minY === 'number' && isFinite(minY) && Math.abs(minY) > 1e-5) {
         // lift so the lowest vertex sits on y=0
         c.position.y -= minY;
       }
@@ -112,7 +149,44 @@ function GazeboGLB(props: { position: [number, number, number]; scale?: number; 
   );
 }
 
+function PodiumGLB(props: { position: [number, number, number]; scale?: number | [number, number, number]; rotationY?: number }) {
+  const { scene } = useGLTF(PODIUM_URL);
 
+  return (
+    <group position={props.position} scale={props.scale || 1.0} rotation={[0, props.rotationY || 0, 0]}>
+      <Clone object={scene} />
+    </group>
+  );
+}
+
+
+function ForestTreeGLB(props: { position: [number, number, number]; scale?: number; rotationY?: number }) {
+  const { scene } = useGLTF(FOREST_FOREST_TREE_URL);
+
+  const memo = useMemo(() => {
+    const c: any = scene.clone(true);
+    let minY = 0;
+    try {
+      const box = new THREE.Box3().setFromObject(c);
+      const v = box?.min?.y;
+      if (typeof v === 'number' && isFinite(v)) minY = v;
+    } catch {}
+    return { obj: c as THREE.Object3D, minY };
+  }, [scene]);
+
+  const s = (props.scale ?? 1);
+  const sy = (typeof s === 'number') ? s : 1;
+  const y = props.position[1] - (memo.minY * sy);
+
+  return (
+    <primitive
+      object={memo.obj}
+      position={[props.position[0], y, props.position[2]]}
+      scale={s}
+      rotation={[0, props.rotationY ?? 0, 0]}
+    />
+  );
+}
 function clamp(v: number, lo: number, hi: number) { return Math.max(lo, Math.min(hi, v)); }
 function rand(a: number, b: number) { return a + Math.random() * (b - a); }
 
@@ -135,6 +209,25 @@ function resolveCircleAABBs(pos: THREE.Vector3, r: number, boxes: AABB2[]) {
 
 }
 
+function makeGazeboColliders(): AABB2[] {
+  const z0 = -(CHUNK_LEN * 0.5);
+  const H = 7.5;   // inner platform half-size
+  const W = 0.65;  // wall thickness
+  const P = 0.95;  // pillar half-size
+  return [
+    { id: "gz_front", minX: -H, maxX: H, minZ: (z0 - H - W), maxZ: (z0 - H + W) },
+    { id: "gz_back",  minX: -H, maxX: H, minZ: (z0 + H - W), maxZ: (z0 + H + W) },
+    { id: "gz_left",  minX: (-H - W), maxX: (-H + W), minZ: (z0 - H), maxZ: (z0 + H) },
+    { id: "gz_right", minX: ( H - W), maxX: ( H + W), minZ: (z0 - H), maxZ: (z0 + H) },
+
+    { id: "gz_p1", minX: (-H - P), maxX: (-H + P), minZ: (z0 - H - P), maxZ: (z0 - H + P) },
+    { id: "gz_p2", minX: ( H - P), maxX: ( H + P), minZ: (z0 - H - P), maxZ: (z0 - H + P) },
+    { id: "gz_p3", minX: (-H - P), maxX: (-H + P), minZ: (z0 + H - P), maxZ: (z0 + H + P) },
+    { id: "gz_p4", minX: ( H - P), maxX: ( H + P), minZ: (z0 + H - P), maxZ: (z0 + H + P) },
+  ];
+}
+
+
 
 const __bvhLocalP = new THREE.Vector3();
 const __bvhWorldP = new THREE.Vector3();
@@ -150,7 +243,9 @@ const __triC = new THREE.Vector3();
 const __triN = new THREE.Vector3();
 const __tmp1 = new THREE.Vector3();
 const __tmp2 = new THREE.Vector3();
-
+const __bvhR2 = { v: 1 };
+const __bvhBestN = new THREE.Vector3();
+const __bvhTmpN = new THREE.Vector3();
 function resolveSphereMeshBVH(
   pos: THREE.Vector3,
   r: number,
@@ -158,18 +253,21 @@ function resolveSphereMeshBVH(
 ) {
   if (!roots || roots.length === 0) return;
 
+  const EPS = 0.03;   // small skin so you stay outside
+  const MAXP = 0.28;  // cap per pass so we don't teleport
+
   __bvhSphere.radius = r;
 
-  for (let pass = 0; pass < 3; pass++) {
+  for (let pass = 0; pass < 4; pass++) {
     let anyPush = false;
 
     for (const root of roots) {
       if (!root) continue;
 
       root.getWorldPosition(__bvhRootPos);
-      if (Math.abs(__bvhRootPos.z - pos.z) > 90) continue;
+      if (Math.abs(__bvhRootPos.z - pos.z) > 120) continue;
 
-      root.updateWorldMatrix(true, false);
+      root.updateWorldMatrix(true, true);
 
       root.traverse((obj: any) => {
         if (!obj || !obj.isMesh || !obj.geometry) return;
@@ -187,49 +285,34 @@ function resolveSphereMeshBVH(
 
         const hit = g.boundsTree.closestPointToPoint(__bvhLocalP, __bvhHit);
         if (!hit) return;
-        const faceIndex = (hit as any).faceIndex ?? -1;
-        if (faceIndex < 0) return;
 
         __bvhWorldP.copy((hit as any).point);
         obj.localToWorld(__bvhWorldP);
 
-        const posAttr = g.attributes?.position;
-        if (!posAttr) return;
-
-        let ia: number, ib: number, ic: number;
-        const indexAttr = g.index;
-        if (indexAttr && indexAttr.array) {
-          const arr: any = indexAttr.array;
-          const b = faceIndex * 3;
-          ia = arr[b + 0]; ib = arr[b + 1]; ic = arr[b + 2];
-        } else {
-          const b = faceIndex * 3;
-          ia = b + 0; ib = b + 1; ic = b + 2;
-        }
-
-        __triA.fromBufferAttribute(posAttr, ia);
-        __triB.fromBufferAttribute(posAttr, ib);
-        __triC.fromBufferAttribute(posAttr, ic);
-
-        obj.localToWorld(__triA);
-        obj.localToWorld(__triB);
-        obj.localToWorld(__triC);
-
-        __tmp1.copy(__triB).sub(__triA);
-        __tmp2.copy(__triC).sub(__triA);
-        __triN.copy(__tmp1).cross(__tmp2);
-        const nlen = __triN.length();
-        if (nlen < 1e-8) return;
-        __triN.multiplyScalar(1 / nlen);
-
-        if (__triN.dot(__bvhDesired) < 0) __triN.negate();
-
+        // Detect penetration in FULL 3D (handles overlapping mountains / overhangs),
+        // but push only in XZ (stable FPS walker).
         __bvhDelta.copy(pos).sub(__bvhWorldP);
-        const signedDist = __bvhDelta.dot(__triN);
+        const dist3 = __bvhDelta.length();
 
-        if (signedDist < r) {
-          pos.addScaledVector(__triN, (r - signedDist));
-          anyPush = true;
+        if (dist3 < r + EPS) {
+          // XZ direction for push
+          __bvhDelta.y = 0;
+          let distXZ = __bvhDelta.length();
+
+          // If we're exactly on the point in XZ, use a stable fallback direction away from root
+          if (distXZ < 1e-6) {
+            __bvhDelta.copy(pos).sub(__bvhRootPos);
+            __bvhDelta.y = 0;
+            distXZ = __bvhDelta.length();
+            if (distXZ < 1e-6) return;
+          }
+
+          let push = (r + EPS) - dist3;
+          if (push > MAXP) push = MAXP;
+          if (push > 1e-6) {
+            pos.addScaledVector(__bvhDelta, push / distXZ);
+            anyPush = true;
+          }
         }
       });
     }
@@ -237,6 +320,7 @@ function resolveSphereMeshBVH(
     if (!anyPush) break;
   }
 }
+
 function makeEnemy(kind: EnemyKind, z: number): Enemy {
   const id = `${kind}_${Date.now()}_${Math.random().toString(16).slice(2)}`;
   const x = rand(-10, 10);
@@ -246,12 +330,62 @@ function makeEnemy(kind: EnemyKind, z: number): Enemy {
   return { id, kind, pos: new THREE.Vector3(x, kind === 'boss' ? 1.2 : 0.7, z), hp, maxHp, spd };
 }
 
-function Chunk(props: { idx: number; centerZ: number; showGazebo?: boolean; onMountains?: (idx: number, roots: any[]) => void }) {
+function Chunk(props: { idx: number; centerZ: number; showGazebo?: boolean; onMountains?: (idx: number, roots: any[]) => void; onTrees?: (idx: number, boxes: AABB2[]) => void; }) {
   const { idx, centerZ } = props;
 
 
   const leftMountainRef = useRef<any>(null);
   const rightMountainRef = useRef<any>(null);
+  const forestTrees = useMemo(() => {
+    const rng = (k: number) => {
+      let t = k >>> 0;
+      return () => {
+        t = (t + 0x6D2B79F5) >>> 0;
+        let x = Math.imul(t ^ (t >>> 15), 1 | t);
+        x ^= x + Math.imul(x ^ (x >>> 7), 61 | x);
+        return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
+      };
+    };
+    const r = rng((idx + 1) * 1337);
+    const out: { id: string; x: number; z: number; s: number; ry: number }[] = [];
+    const sidePad = PATH_W * 0.5 + 0.6;
+    const edgeMax = GRASS_W * 0.5 - 1.6;
+    const n = 18;
+    for (let i = 0; i < n; i++) {
+      const side = (r() < 0.5 ? -1 : 1);
+      const x = side * (sidePad + (edgeMax - sidePad) * Math.pow(r(), 0.55));
+      const z = -CHUNK_LEN * 0.5 + CHUNK_LEN * r();
+      const s0 = 0.85 + 0.55 * r();
+      const s = Math.max(0.75, Math.min(1.35, s0));
+      const ry = (r() * Math.PI * 2);
+      out.push({ id: `ft_${idx}_${i}`, x, z, s, ry });
+    }
+    return out;
+  }, [idx]);
+
+  const trunkBoxes = useMemo<AABB2[]>(() => {
+    const out: AABB2[] = [];
+    for (const t of (forestTrees as any[])) {
+      const visScale = (t.s ?? 1) * 7;     // matches render scale={t.s * 7}
+      const r = 0.05 * visScale;          // trunk radius in XZ (tune if needed)
+      const wz = centerZ + (t.z ?? 0);     // world Z
+      out.push({
+        id: String(t.id),
+        minX: (t.x ?? 0) - r,
+        maxX: (t.x ?? 0) + r,
+        minZ: wz - r,
+        maxZ: wz + r,
+      });
+    }
+    return out;
+  }, [forestTrees, centerZ]);
+
+  useEffect(() => {
+    props.onTrees?.(idx, trunkBoxes);
+    return () => { props.onTrees?.(idx, []); };
+  }, [idx, trunkBoxes, props.onTrees]);
+
+  const gazeboRef = useRef<any>(null);
 
   useEffect(() => {
     let alive = true;
@@ -259,7 +393,7 @@ function Chunk(props: { idx: number; centerZ: number; showGazebo?: boolean; onMo
     const tick = () => {
       if (!alive) return;
       const roots = [leftMountainRef.current, rightMountainRef.current].filter(Boolean);
-      if (roots.length) {
+      const gz = (props.idx === 0 && !!props.showGazebo) ? gazeboRef.current : null;if (roots.length) {
         props.onMountains?.(props.idx, roots);
                 if (false) console.log('[BVH] registerChunk', { idx: props.idx, roots: roots.length });
         try {
@@ -270,7 +404,7 @@ function Chunk(props: { idx: number; centerZ: number; showGazebo?: boolean; onMo
               max: [Number(b.max.x.toFixed(2)), Number(b.max.y.toFixed(2)), Number(b.max.z.toFixed(2))],
             };
           });
-          if (false) console.log('[BVH] mountainBox', { idx: props.idx, boxes });
+          if (true) console.log('[BVH] mountainBox', { idx: props.idx, boxes });
         } catch (e) {
           console.log('[BVH] mountainBox error', String(e));
         }
@@ -290,25 +424,49 @@ function Chunk(props: { idx: number; centerZ: number; showGazebo?: boolean; onMo
     tick();
     return () => {
       alive = false;
-      props.onMountains?.(props.idx, []);
-    };
+      props.onMountains?.(props.idx, []);};
   }, [props.idx, props.onMountains]);
-
-  return (
+return (
     <group position={[0, 0, centerZ]}>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
         <planeGeometry args={[PATH_W, CHUNK_LEN]} />
         <meshStandardMaterial color={'#2f3a2f'} polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-1} />
       </mesh>
 
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
         <planeGeometry args={[GRASS_W, CHUNK_LEN]} />
         <meshStandardMaterial color={'#3a4f3a'} />
       </mesh>
 
+      {/* Forest trees */}
+      {forestTrees.map(t => (
+        <ForestTreeGLB
+          key={t.id}
+          position={[t.x, TREE_Y, t.z]}
+          scale={t.s * 7}
+          rotationY={t.ry}
+        />
+      ))}
+
+
         {(idx === 0 && !!props.showGazebo) ? (
-          <GazeboGLB position={[0, 0, 0]} scale={12.0} rotationY={0} />
-        ) : null}
+            SHOW_GAZEBO_MESH ? (
+              <group ref={gazeboRef}>
+                <GazeboGLB position={[0, GAZEBO_LIFT + 0.35, 0]} scale={12.0} rotationY={Math.PI} />
+              </group>
+            ) : (
+              <group>
+                <mesh position={[0, GAZEBO_PLATFORM_Y - 0.10, 0]}>
+                  <cylinderGeometry args={[7.6, 7.6, 0.20, 16]} />
+                  <meshStandardMaterial color={"#6c7a6c"} />
+                </mesh>
+                <mesh position={[0, GAZEBO_BASE_Y + 0.60, 0]}>
+                  <cylinderGeometry args={[0.35, 0.35, 1.20, 10]} />
+                  <meshStandardMaterial color={"#4e5a4e"} />
+                </mesh>
+              </group>
+            )
+          ) : null}
 
 
 
@@ -336,9 +494,8 @@ function Scene(props: {
   onMonument: () => void;
   onEnemyKilled: (kind: EnemyKind) => void;
 }) {
-  const playerPosRef = useRef(new THREE.Vector3(0, 0, 0));
+  const playerPosRef = useRef(new THREE.Vector3(0, GAZEBO_PLATFORM_Y + STAND_H + 2.25, -(CHUNK_LEN * 0.5)));
     const mountainRootsRef = useRef<any[]>([]);
-
     const mountainChunkMapRef = useRef<Map<number, any[]>>(new Map());
     
     const tmpMountainRootsRef = useRef<any[]>([]);
@@ -349,11 +506,21 @@ const onMountains = useCallback((idx: number, roots: any[]) => {
       for (const arr of mountainChunkMapRef.current.values()) flat.push(...arr);
       mountainRootsRef.current = flat;
     }, []);
+    const treeChunkMapRef = useRef<Map<number, AABB2[]>>(new Map());
+
+  
+  const onTrees = useCallback((idx: number, boxes: AABB2[]) => {
+    if (boxes && boxes.length) treeChunkMapRef.current.set(idx, boxes);
+    else treeChunkMapRef.current.delete(idx);
+  }, []);
     const showGazebo = Math.abs(playerPosRef.current.z) < 90;
-  const simAcc = useRef(0);
+  const STAND_Y = 1.15; // authoritative player standing height
+    const GAZEBO_HALF = 9.0;
+    const simAcc = useRef(0);
     const moveVelRef = useRef({ x: 0, y: 0 });
   const hadRuntimeErr = useRef(false);
-    const lastMountainCountRef = useRef(-1);
+        const spawnFixRef = useRef(120);
+const lastMountainCountRef = useRef(-1);
 
   const [chunkTick, setChunkTick] = useState(0);
   const baseChunkRef = useRef(0);
@@ -368,14 +535,22 @@ const onMountains = useCallback((idx: number, roots: any[]) => {
 
   const lastShootPulse = useRef(0);
   const spawnT = useRef(0);
-
   const podiums = useMemo(() => {
     const out: { id: string; side: 1 | -1; z: number }[] = [];
-    for (let i = 1; i <= 30; i++) {
+    const count = 10;          // total checkpoints
+    let chunk = 6;             // first podium after 14 chunks
+    for (let i = 1; i <= count; i++) {
       const side = (i % 2 === 0 ? 1 : -1) as 1 | -1;
-      out.push({ id: `pod_${i}`, side, z: -i * 26 });
+      const z = -(chunk * CHUNK_LEN) - (CHUNK_LEN * 0.5);
+      out.push({ id: `pod_${i}`, side, z });
+
+      // spacing increases as you progress (harder + more time between checkpoints)
+      const add = min(22, 8 + Math.floor(i * 1.6));
+      chunk += add;
     }
     return out;
+
+    function min(a: number, b: number) { return a < b ? a : b; }
   }, []);
 
 
@@ -392,7 +567,10 @@ const onMountains = useCallback((idx: number, roots: any[]) => {
         } as AABB2;
       });
     }, [podiums]);
-  const monument = useMemo(() => ({ id: 'monument_1', side: 1 as 1, z: -320 }), []);
+  
+
+    const gazeboBoxes = useMemo(() => makeGazeboColliders(), []);
+const monument = useMemo(() => ({ id: 'monument_1', side: 1 as 1, z: -320 }), []);
   const collectedRef = useRef<Record<string, 1>>({});
   const [collectedTick, setCollectedTick] = useState(0);
 
@@ -489,22 +667,35 @@ const onMountains = useCallback((idx: number, roots: any[]) => {
           p.x += wx * stepDt;
           p.z += wz * stepDt;
           p.z = Math.min(p.z, SPAWN_MAX_Z);
+// lock vertical position (prevents spawning inside BVH meshes)
 
-
-        p.x = clamp(p.x, -12.5, 12.5);
-
-
-                    // COLLISION: podiums (2D AABB)
+                      // COLLISION: podiums (2D AABB)
           const nearPodiumBoxes: AABB2[] = [];
+            const minLoaded = baseChunkRef.current;
+            const maxLoaded = minLoaded + chunks.length - 1;
           for (const b of podiumBoxes) {
             if (collectedRef.current[b.id]) continue;
             const cz = (b.minZ + b.maxZ) * 0.5;
             const dz = cz - p.z;
+              const bChunk = Math.floor((-cz) / CHUNK_LEN);
+              if (bChunk < minLoaded || bChunk > maxLoaded) continue;
             if (Math.abs(dz) > 60) continue; // only nearby colliders
             nearPodiumBoxes.push(b);
           }
           resolveCircleAABBs(p, PLAYER_RADIUS, nearPodiumBoxes);
-                        const mcnt = mountainRootsRef.current.length;
+                        
+          const nearTreeBoxes: AABB2[] = [];
+          const curT = Math.floor((-p.z) / CHUNK_LEN);
+          const t0 = treeChunkMapRef.current.get(curT);
+          const t1 = treeChunkMapRef.current.get(curT - 1);
+          const t2 = treeChunkMapRef.current.get(curT + 1);
+          if (t0) nearTreeBoxes.push(...t0);
+          if (t1) nearTreeBoxes.push(...t1);
+          if (t2) nearTreeBoxes.push(...t2);
+          if (nearTreeBoxes.length) if (p.y <= 0.55) {
+            resolveCircleAABBs(p, PLAYER_RADIUS, nearTreeBoxes);
+          }
+const mcnt = mountainRootsRef.current.length;
             if (mcnt !== lastMountainCountRef.current) {
               lastMountainCountRef.current = mcnt;
               if (false) console.log('[BVH] mountainRoots', { count: mcnt });
@@ -520,6 +711,43 @@ const onMountains = useCallback((idx: number, roots: any[]) => {
             if (a1) tmp.push(...a1);
             if (a2) tmp.push(...a2);
             resolveSphereMeshBVH(p, PLAYER_RADIUS, tmp);
+            
+            const tc2 = Math.floor((-p.z) / CHUNK_LEN);
+            const tt0 = (treeChunkMapRef.current.get(tc2) || []) as any;
+            const tt1 = (treeChunkMapRef.current.get(tc2 - 1) || []) as any;
+            const tt2 = (treeChunkMapRef.current.get(tc2 + 1) || []) as any;
+            const ttBoxes = ([] as any[]).concat(tt0, tt1, tt2) as any;
+            if (ttBoxes.length) resolveCircleAABBs(p, PLAYER_RADIUS, ttBoxes);
+            p.y = STAND_H;
+// SPAWN DECLIP (first ~2 seconds): if inside gazebo/podium, snap UP onto top; if inside tree, shove left/right
+              if (spawnFixRef.current > 0) {
+                spawnFixRef.current--;
+
+                // trees: shove sideways only
+                if (ttBoxes.length) {
+                  for (const b of ttBoxes) {
+                    if (!b) continue;
+                    if (p.x >= b.minX && p.x <= b.maxX && p.z >= b.minZ && p.z <= b.maxZ) {
+                      const shove = PLAYER_RADIUS + 0.55;
+                      if (p.x >= 0) p.x = b.maxX + shove;
+                      else p.x = b.minX - shove;
+                      break;
+                    }
+                  }
+                }
+
+                // podium: snap up if inside footprint
+                for (const b of podiumBoxes) {
+                  if (!b) continue;
+                  if (p.x >= b.minX && p.x <= b.maxX && p.z >= b.minZ && p.z <= b.maxZ) {
+                    const wantY = PODIUM_TOP_Y + STAND_H + 0.05;
+                    if (p.y < wantY) p.y = wantY;
+                    break;
+                  }
+                }
+              }
+
+
 spawnT.current += stepDt;
         if (spawnT.current >= 1.0) {
           spawnT.current = 0;
@@ -554,7 +782,21 @@ spawnT.current += stepDt;
               const np = e.pos.clone().add(dir.multiplyScalar(step));
                 const ep = np;
                 resolveCircleAABBs(ep, ENEMY_RADIUS, nearPodiumBoxes);
-                return { ...e, pos: ep };
+                
+                  
+                  const eCurT = Math.floor((-ep.z) / CHUNK_LEN);
+                  const eTree: AABB2[] = [];
+                  const et0 = treeChunkMapRef.current.get(eCurT);
+                  const et1 = treeChunkMapRef.current.get(eCurT - 1);
+                  const et2 = treeChunkMapRef.current.get(eCurT + 1);
+                  if (et0) eTree.push(...et0);
+                  if (et1) eTree.push(...et1);
+                  if (et2) eTree.push(...et2);
+                  if (eTree.length) if (ep.y <= 0.55) {
+                  resolveCircleAABBs(ep, ENEMY_RADIUS, eTree);
+                }
+resolveSphereMeshBVH(ep, ENEMY_RADIUS, tmp);
+return { ...e, pos: ep };
             }
             return e;
           });
@@ -614,11 +856,12 @@ spawnT.current += stepDt;
   const chunks = useMemo(() => Array.from({ length: CHUNK_BACK + CHUNK_AHEAD + 1 }, (_, i) => i - CHUNK_BACK), []);
   const baseChunk = baseChunkRef.current;
 
-  const fogColor = '#0a0f18';
+  const fogColor = '#bfefff';
 
   return (
-  <>
-      <fog attach="fog" args={[fogColor, 6, 110]} />
+    <>
+      <SkyboxAndFog />
+<fog attach="fog" args={["#bfefff", 12, 180]} />
       <ambientLight intensity={0.65} />
       <directionalLight position={[6, 10, 6]} intensity={1.35} />
       <directionalLight position={[-6, 8, -6]} intensity={0.55} />
@@ -634,30 +877,33 @@ spawnT.current += stepDt;
       {chunks.map((i) => {
         const chunkIdx = baseChunk + i;
         const centerZ = -(chunkIdx * CHUNK_LEN) - (CHUNK_LEN / 2);
-        return <Chunk key={`c_${chunkIdx}`} idx={chunkIdx} centerZ={centerZ} showGazebo={showGazebo} onMountains={onMountains} />;
+        return <Chunk key={`c_${chunkIdx}`} idx={chunkIdx} centerZ={centerZ} showGazebo={showGazebo} onMountains={onMountains} onTrees={onTrees} />;
       })}
 
       {podiums.map((pd) => {
         const playerZ = playerPosRef.current.z;
+          const pdChunk = Math.floor((-pd.z) / CHUNK_LEN);
+          const minLoaded = baseChunk;
+          const maxLoaded = baseChunk + chunks.length - 1;
+          if (pdChunk < minLoaded || pdChunk > maxLoaded) return null;
         if (pd.z > playerZ + 18) return null;
-        if (pd.z < playerZ - 900) return null;
+        if (pd.z < playerZ - 260) return null;
         if (collectedRef.current[pd.id]) return null;
         const x = pd.side * 3.8;
         return (
-          <mesh
-            key={pd.id}
-            position={[x, 0.35, pd.z]}
-            onPointerDown={() => {
-              if (collectedRef.current[pd.id]) return;
-              collectedRef.current[pd.id] = 1;
-              setCollectedTick(t => t + 1);
-              props.onPodium();
-            }}
-          >
-            <boxGeometry args={[1.35, 0.75, 1.35]} />
-            <meshStandardMaterial color={'#c7b38a'} />
-          </mesh>
-        );
+            <group
+              key={pd.id}
+              position={[x, 1.05, pd.z]}
+              onPointerDown={() => {
+                if (collectedRef.current[pd.id]) return;
+                collectedRef.current[pd.id] = 1;
+                setCollectedTick(t => t + 1);
+                props.onPodium();
+              }}
+            >
+              <PodiumGLB position={[0, 0, 0]} scale={1.0} rotationY={0} />
+            </group>
+          );
       })}
 
       {!collectedRef.current[monument.id] && (
@@ -867,8 +1113,8 @@ export default function FantasyWorld3D(props: {
  onResponderRelease={(e)=>releaseTouches(e.nativeEvent.changedTouches)}
  onResponderTerminate={(e)=>releaseTouches(e.nativeEvent.changedTouches)}>
       <Canvas
-        style={styles.canvas}
-        gl={{ antialias: true }}
+        style={{ flex: 1 }}
+        gl={{ antialias: false, powerPreference: 'low-power' }}
         onCreated={({ gl }) => { try { (gl as any).setClearColor?.('#0a0f18', 1); } catch (e) {} }}
         camera={{ position: [0, 1.55, 0], fov: 65 }}
       >
@@ -903,7 +1149,7 @@ export default function FantasyWorld3D(props: {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#0a0f18' },
+  root: { flex: 1, width: '100%', height: '100%', alignSelf: 'stretch', backgroundColor: '#0a0f18' },
   canvas: { flex: 1 },
 
   lookLayer: { position: 'absolute', top: 0, bottom: 0, right: 0, zIndex: 2 },
