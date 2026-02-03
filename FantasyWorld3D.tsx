@@ -1,13 +1,10 @@
 import React, {useEffect, useMemo, useRef, useState, Suspense, useCallback} from 'react';
-import { useTexture } from '@react-three/drei';
-
-import { useThree } from '@react-three/fiber';
-
 import { MeshBVH, acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from "three-mesh-bvh";
 import { View, StyleSheet, useWindowDimensions} from 'react-native';
-import { Canvas, useFrame } from '@react-three/fiber/native';
-import { useGLTF, useProgress, Clone, useAnimations } from '@react-three/drei/native';
+import { Canvas, useFrame, useThree } from '@react-three/fiber/native';
+import { useGLTF, useProgress, Clone, useAnimations, useTexture } from '@react-three/drei/native';
 import * as THREE from 'three';
+import { SkeletonUtils } from 'three-stdlib';
 // === BVH PATCH (must run once, same THREE instance as R3F) ===
 (THREE.BufferGeometry as any).prototype.computeBoundsTree = computeBoundsTree;
 (THREE.BufferGeometry as any).prototype.disposeBoundsTree = disposeBoundsTree;
@@ -16,7 +13,7 @@ import * as THREE from 'three';
 
 type EnemyKind = 'enemy' | 'boss';
 type EnemyAnim = 'walk' | 'run' | 'attack';
-type Enemy = { id: string; kind: EnemyKind; pos: THREE.Vector3; hp: number; maxHp: number; spd: number };
+type Enemy = { id: string; kind: EnemyKind; pos: THREE.Vector3; hp: number; maxHp: number; spd: number; anim: EnemyAnim; ry: number; atkCd: number };
 type Projectile = { id: string; pos: THREE.Vector3; vel: THREE.Vector3; ttl: number };
 
 const CHUNK_LEN = 40;
@@ -56,18 +53,20 @@ const PATH_DEBUG_VER = "v2";
 const PODIUM_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/podium_v1.glb';
   const SKYBOX_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/skybox1.jpg';
 const FOREST_TREE_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/forest_tree.glb';
-const MONSTER1_RUN_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/monster1/monster1_running.glb';
 const MONSTER1_WALK_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/monster1/monster1_walking.glb';
+const MONSTER1_RUN_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/monster1/monster1_running.glb';
 const MONSTER1_ATTACK_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/monster1/monster1_attack_v1.glb';
-useGLTF.preload(MONSTER1_RUN_URL);
-useGLTF.preload(MONSTER1_WALK_URL);
-useGLTF.preload(MONSTER1_ATTACK_URL);
 
+const MONSTER1_MODEL_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/monster1/monster1_model.glb';
 useGLTF.preload(MOUNTAIN_URL);
 useGLTF.preload(GAZEBO_URL);
 useGLTF.preload(PATH_GLB_URL);
 useGLTF.preload(PODIUM_URL);
 
+useGLTF.preload(MONSTER1_MODEL_URL);
+useGLTF.preload(MONSTER1_WALK_URL);
+useGLTF.preload(MONSTER1_RUN_URL);
+useGLTF.preload(MONSTER1_ATTACK_URL);
 useGLTF.preload(FOREST_TREE_URL);
 const FOREST_FOREST_TREE_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/forest_tree.glb';
 useGLTF.preload(FOREST_FOREST_TREE_URL);
@@ -329,6 +328,7 @@ function resolveSphereMeshBVH(
     let anyPush = false;
 
     for (const root of roots) {
+    if (!root || !(root as any).traverse) continue;
       if (!root) continue;
 
       root.getWorldPosition(__bvhRootPos);
@@ -388,47 +388,98 @@ function resolveSphereMeshBVH(
   }
 }
 
-function makeEnemy(kind: EnemyKind, z: number): Enemy {
-  const id = `${kind}_${Date.now()}_${Math.random().toString(16).slice(2)}`;
-  const x = rand(-10, 10);
-  const maxHp = kind === 'boss' ? 120 : 40;
-  const hp = maxHp;
-  const spd = kind === 'boss' ? 2.1 : 2.7;
-  return { id, kind, pos: new THREE.Vector3(x, kind === 'boss' ? 1.2 : 0.7, z), hp, maxHp, spd };
-}
+  function makeEnemy(kind: EnemyKind, z: number): Enemy {
+    const id = `${kind}_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    const x = rand(-10, 10);
+    const maxHp = kind === 'boss' ? 120 : 40;
+    const hp = maxHp;
+    const spd = kind === 'boss' ? 2.1 : 2.7;
+    const y = kind === 'boss' ? 1.2 : 0.7;
+    return { id, kind, pos: new THREE.Vector3(x, y, z), hp, maxHp, spd, anim: 'walk', ry: 0, atkCd: 0 };
+  }
 
 
-function Monster1GLB(props: { position: [number, number, number]; scale?: number; rotationY?: number; anim: EnemyAnim }) {
-  const group = useRef<THREE.Group>(null as any);
-  const walk: any = useGLTF(MONSTER1_WALK_URL as any);
-  const run: any = useGLTF(MONSTER1_RUN_URL as any);
-  const attack: any = useGLTF(MONSTER1_ATTACK_URL as any);
+  function Monster1GLB(props: { position: [number, number, number]; scale?: number; rotationY?: number; anim: EnemyAnim }) {
+  const ref = useRef<THREE.Group>(null);
 
-  const walkScene = useMemo(() => (walk?.scene ? walk.scene.clone(true) : null), [walk]);
-  const runScene = useMemo(() => (run?.scene ? run.scene.clone(true) : null), [run]);
-  const attackScene = useMemo(() => (attack?.scene ? attack.scene.clone(true) : null), [attack]);
+  const modelG: any = useGLTF(MONSTER1_MODEL_URL as any);
+  const walkG: any = useGLTF(MONSTER1_WALK_URL as any);
+  const runG: any = useGLTF(MONSTER1_RUN_URL as any);
+  const atkG: any = useGLTF(MONSTER1_ATTACK_URL as any);
 
-  const walkAn = useAnimations(walk?.animations || [], group);
-  const runAn = useAnimations(run?.animations || [], group);
-  const attackAn = useAnimations(attack?.animations || [], group);
+  const baseScene: any = modelG?.scene ?? (Array.isArray(modelG) ? modelG[0]?.scene : null);
+
+  const obj = useMemo<any>(() => {
+    if (!baseScene) return null;
+    const c: any = SkeletonUtils.clone(baseScene);
+    c.traverse((m: any) => {
+      if (!m?.isMesh || !m.geometry) return;
+      const g: any = m.geometry;
+      if (!g.boundsTree) g.boundsTree = new MeshBVH(g);
+    });
+    return c;
+  }, [baseScene]);
+
+  const clips = useMemo<THREE.AnimationClip[]>(() => {
+    const out: THREE.AnimationClip[] = [];
+    const add = (g: any) => {
+      const arr: any[] = Array.isArray(g?.animations) ? g.animations : [];
+      for (const c of arr) {
+        const cc: any = c?.clone ? c.clone() : c;
+        if (cc) out.push(cc);
+      }
+    };
+    add(walkG);
+    add(runG);
+    add(atkG);
+
+    for (const c of out) {
+      const n = String(c.name || '').toLowerCase();
+      if (n.includes('run')) c.name = 'run';
+      else if (n.includes('walk')) c.name = 'walk';
+      else if (n.includes('attack') || n.includes('combo') || n.includes('hit')) c.name = 'attack';
+    }
+    return out;
+  }, [walkG, runG, atkG]);
+
+  const { actions } = useAnimations(clips, ref);
 
   useEffect(() => {
-    const stopAll = (a: any) => { try { Object.values(a?.actions || {}).forEach((x: any) => x?.stop?.()); } catch {} };
-    stopAll(walkAn); stopAll(runAn); stopAll(attackAn);
-    const pick = (props.anim === "attack") ? attackAn : (props.anim === "run") ? runAn : walkAn;
-    let a0: any = null;
-    try { const acts: any[] = Object.values(pick?.actions || {}) as any; a0 = acts[0]; } catch {}
-    if (a0) { try { a0.reset?.(); a0.fadeIn?.(0.08); a0.play?.(); } catch {} }
-    return () => { stopAll(walkAn); stopAll(runAn); stopAll(attackAn); };
-  }, [props.anim]);
+    if (!actions) return;
 
-  const s = props.scale ?? 1.0;
-  const ry = props.rotationY ?? 0;
+    const key = props.anim;
+    const act: any =
+      (actions as any)[key] ??
+      (actions as any)['walk'] ??
+      (actions as any)[Object.keys(actions)[0]];
+
+    if (!act) return;
+
+    for (const k of Object.keys(actions)) {
+      const a: any = (actions as any)[k];
+      if (a && a !== act) a.fadeOut(0.12);
+    }
+
+    act.reset();
+    act.fadeIn(0.12);
+
+    if (key === 'attack') {
+      act.setLoop(THREE.LoopOnce, 1);
+      act.clampWhenFinished = true;
+    } else {
+      act.setLoop(THREE.LoopRepeat, Infinity);
+      act.clampWhenFinished = false;
+    }
+
+    act.play();
+    return () => { try { act.fadeOut(0.10); } catch (e) {} };
+  }, [props.anim, actions]);
+
+  if (!obj) return null;
+
   return (
-    <group ref={group} position={props.position} rotation={[0, ry, 0]} scale={[s, s, s]}>
-      {props.anim === "attack" ? (attackScene ? <primitive object={attackScene} /> : null)
-        : props.anim === "run" ? (runScene ? <primitive object={runScene} /> : null)
-        : (walkScene ? <primitive object={walkScene} /> : null)}
+    <group ref={ref} position={props.position} rotation={[0, props.rotationY ?? 0, 0]} scale={props.scale ?? 1}>
+      <primitive object={obj} />
     </group>
   );
 }
@@ -627,19 +678,26 @@ function Scene(props: {
     
     const tmpMountainRootsRef = useRef<any[]>([]);
 const onMountains = useCallback((idx: number, roots: any[]) => {
-      if (roots && roots.length) mountainChunkMapRef.current.set(idx, roots);
+      const clean = (roots || []).filter(Boolean);
+      if (clean.length) mountainChunkMapRef.current.set(idx, clean);
       else mountainChunkMapRef.current.delete(idx);
       const flat: any[] = [];
-      for (const arr of mountainChunkMapRef.current.values()) flat.push(...arr);
+      for (const arr of mountainChunkMapRef.current.values()) {
+        for (const r of arr) if (r) flat.push(r);
+      }
       mountainRootsRef.current = flat;
     }, []);
     const treeChunkMapRef = useRef<Map<number, AABB2[]>>(new Map());
-
+  const treeBoxesRef = useRef<AABB2[]>([]);
   
   const onTrees = useCallback((idx: number, boxes: AABB2[]) => {
-    if (boxes && boxes.length) treeChunkMapRef.current.set(idx, boxes);
-    else treeChunkMapRef.current.delete(idx);
-  }, []);
+      if (boxes && boxes.length) treeChunkMapRef.current.set(idx, boxes);
+      else treeChunkMapRef.current.delete(idx);
+
+      const flat: AABB2[] = [];
+      for (const arr of treeChunkMapRef.current.values()) flat.push(...arr);
+      treeBoxesRef.current = flat;
+    }, []);
     const showGazebo = Math.abs(playerPosRef.current.z) < 90;
   const STAND_Y = 1.15; // authoritative player standing height
     const GAZEBO_HALF = 9.0;
@@ -657,6 +715,18 @@ const lastMountainCountRef = useRef(-1);
   projRef.current = projectiles;
 
   const [enemies, setEnemies] = useState<Enemy[]>(() => [makeEnemy('enemy', -12)]);
+
+useEffect(() => {
+  setEnemies([
+    makeEnemy('enemy', -18),
+    makeEnemy('enemy', -36),
+    makeEnemy('enemy', -54),
+    makeEnemy('enemy', -72),
+    makeEnemy('enemy', -90),
+    makeEnemy('boss', -120),
+  ]);
+}, []);
+
   const enemiesRef = useRef<Enemy[]>([]);
   enemiesRef.current = enemies;
 
@@ -738,7 +808,6 @@ const monument = useMemo(() => ({ id: 'monument_1', side: 1 as 1, z: -320 }), []
   }
 
   useFrame(({ camera }, dt) => {
-    if (hadRuntimeErr.current) return;
     try {
       const stepHz = 60;
       const stepDt = 1 / stepHz;
@@ -895,39 +964,41 @@ spawnT.current += stepDt;
         const alive = enemiesRef.current.filter(e => e.hp > 0);
         if (alive.length) {
           let moved = false;
-          const nextEnemies = alive.map(e => {
-            const dir = p.clone().sub(e.pos);
-            dir.y = 0;
-            const d = dir.length();
-            if (d > 0.001) dir.multiplyScalar(1 / d);
+                  const nextEnemies = alive.map(e => {
+          const dVec = p.clone().sub(e.pos);
+          dVec.y = 0;
+          const d0 = dVec.length();
+          const dir = d0 > 1e-6 ? dVec.multiplyScalar(1 / d0) : new THREE.Vector3(0, 0, 1);
 
-            const reach = e.kind === 'boss' ? 1.8 : 1.15;
-            const canStep = Math.max(0, d - reach);
-            const step = Math.min(canStep, e.spd * stepDt);
-            if (step > 0.0001) {
-              moved = true;
-              const np = e.pos.clone().add(dir.multiplyScalar(step));
-                const ep = np;
-                resolveCircleAABBs(ep, ENEMY_RADIUS, nearPodiumBoxes);
-                
-                  
-                  const eCurT = Math.floor((-ep.z) / CHUNK_LEN);
-                  const eTree: AABB2[] = [];
-                  const et0 = treeChunkMapRef.current.get(eCurT);
-                  const et1 = treeChunkMapRef.current.get(eCurT - 1);
-                  const et2 = treeChunkMapRef.current.get(eCurT + 1);
-                  if (et0) eTree.push(...et0);
-                  if (et1) eTree.push(...et1);
-                  if (et2) eTree.push(...et2);
-                  if (eTree.length) if (ep.y <= 0.55) {
-                  resolveCircleAABBs(ep, ENEMY_RADIUS, eTree);
-                }
-resolveSphereMeshBVH(ep, ENEMY_RADIUS, tmp);
-return { ...e, pos: ep };
+          let atkCd = Math.max(0, (e.atkCd ?? 0) - stepDt);
+          const reach = e.kind === 'boss' ? 1.85 : 1.25;
+
+          if (atkCd > 0) {
+            return { ...e, atkCd, anim: 'attack' as EnemyAnim };
+          }
+
+          if (d0 <= reach) {
+            return { ...e, atkCd: 0.85, anim: 'attack' as EnemyAnim };
+          }
+
+          const step = Math.min(Math.max(0, d0 - reach), e.spd * stepDt);
+          const ry = Math.atan2(dir.x, dir.z);
+
+          if (step > 0.0001) {
+            moved = true;
+            const ep = e.pos.clone().add(dir.multiplyScalar(step));
+            resolveCircleAABBs(ep, ENEMY_RADIUS, nearPodiumBoxes);
+            const eTree = treeBoxesRef.current;
+            if (eTree.length) {
+              resolveCircleAABBs(ep, ENEMY_RADIUS, eTree);
             }
-            return e;
-          });
-          if (moved) setEnemies(nextEnemies);
+            resolveSphereMeshBVH(ep, ENEMY_RADIUS, tmp);
+            return { ...e, pos: ep, ry, atkCd, anim: 'run' as EnemyAnim };
+          }
+
+          return { ...e, ry, atkCd, anim: 'walk' as EnemyAnim };
+        });
+        if (moved) setEnemies(nextEnemies);
         }
 
         const currentEnemies = enemiesRef.current.slice();
@@ -975,7 +1046,6 @@ return { ...e, pos: ep };
       camera.position.set(p.x, 1.55, p.z);
       camera.quaternion.setFromEuler(new THREE.Euler(pitch, yaw, 0, 'YXZ'));
     } catch (e) {
-      hadRuntimeErr.current = true;
       console.error(e);
     }
   });
@@ -1054,8 +1124,8 @@ return { ...e, pos: ep };
           <Monster1GLB
               position={[e.pos.x, e.pos.y, e.pos.z]}
               scale={e.kind === 'boss' ? 2.6 : 1.4}
-              rotationY={(e as any).ry || 0}
-              anim={((e as any).anim || 'walk')}
+              rotationY={e.ry || 0}
+              anim={e.anim || 'walk'}
             />
 
           <mesh position={[e.pos.x, e.pos.y + (e.kind === 'boss' ? 3.2 : 1.6), e.pos.z]}>
