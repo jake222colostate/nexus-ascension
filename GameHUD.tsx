@@ -10,6 +10,7 @@ export default function GameHUD(props: {
   title: string;
   leftSub: string;
   rightLines?: string[];
+    navButtons?: { label: string; onPress: () => void }[];
   buttons: HudButton[];
   onOpenUpgrades: () => void;
   toast?: string;
@@ -85,31 +86,37 @@ export default function GameHUD(props: {
           justifyContent: 'space-between',
         }}
       >
-        <Panel
-          style={{
-            paddingVertical: 12,
-            paddingHorizontal: 14,
-          }}
-        >
-          <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
-            <View style={{ flex: 1 }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+            <Panel style={{ flex: 1, paddingVertical: 10, paddingHorizontal: 12 }}>
               <Text style={{ color: '#fff', fontSize: 18, fontWeight: '900', letterSpacing: 0.2 }} numberOfLines={1}>
                 {props.title}
               </Text>
               <Text style={{ color: 'rgba(255,255,255,0.70)', marginTop: 4, fontSize: 12, fontWeight: '700' }} numberOfLines={1}>
                 {props.leftSub}
               </Text>
-            </View>
+            </Panel>
 
-            <View style={{ alignItems: 'flex-end' }}>
-              {(props.rightLines ?? []).map((t, i) => (
-                <Text key={i} style={{ color: '#fff', fontSize: 12, marginTop: i === 0 ? 0 : 6, fontWeight: '900' }} numberOfLines={1}>
-                  {t}
-                </Text>
-              ))}
-            </View>
+            <Panel style={{ paddingVertical: 10, paddingHorizontal: 12, alignSelf: 'flex-start', maxWidth: 220 }}>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 6 }}>
+                {(props.rightLines ?? []).map((t, i) => (
+                  <View
+                    key={i}
+                    style={{
+                      paddingVertical: 4,
+                      paddingHorizontal: 8,
+                      borderRadius: 999,
+                      backgroundColor: 'rgba(255,255,255,0.10)',
+                      borderWidth: 1,
+                      borderColor: 'rgba(255,255,255,0.14)',
+                    }}
+                  >
+                    <Text style={{ color: '#fff', fontSize: 11, fontWeight: '900' }} numberOfLines={1}>
+                      {t}
+                    </Text>
+                  </View>
+                ))}
+              </View></Panel>
           </View>
-        </Panel>
 
         <View pointerEvents="box-none">
           {props.toast ? (
