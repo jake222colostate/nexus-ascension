@@ -13,7 +13,7 @@ import { SkeletonUtils } from 'three-stdlib';
 
 type EnemyKind = 'enemy' | 'boss';
 type EnemyAnim = 'walk' | 'run' | 'attack';
-type Enemy = { id: string; kind: EnemyKind; pos: THREE.Vector3; hp: number; maxHp: number; spd: number; anim: EnemyAnim; ry: number; atkCd: number };
+type Enemy = { id: string; kind: EnemyKind; runner: boolean; baseSpd: number; aggro: boolean; wanderYaw: number; wanderT: number; pos: THREE.Vector3; hp: number; maxHp: number; spd: number; anim: EnemyAnim; ry: number; atkCd: number };
 type Projectile = { id: string; pos: THREE.Vector3; vel: THREE.Vector3; ttl: number };
 
 const CHUNK_LEN = 40;
@@ -395,19 +395,25 @@ function resolveSphereMeshBVH(
     const hp = maxHp;
     const spd = kind === 'boss' ? 2.1 : 2.7;
     const y = kind === 'boss' ? 1.2 : 0.7;
-    return { id, kind, pos: new THREE.Vector3(x, y, z), hp, maxHp, spd, anim: 'walk', ry: 0, atkCd: 0 };
+    const runner = (kind !== 'boss') && (Math.random() < 0.20);
+      const baseSpd = spd;
+      const wanderYaw = (Math.random() * Math.PI * 2);
+      const wanderT = 0;
+      const aggro = false;
+      return { id, kind, runner, baseSpd, aggro, wanderYaw, wanderT, pos: new THREE.Vector3(x, y, z), hp, maxHp, spd, anim: 'walk', ry: 0, atkCd: 0 };
   }
 
 
   function Monster1GLB(props: { position: [number, number, number]; scale?: number; rotationY?: number; anim: EnemyAnim }) {
   const ref = useRef<THREE.Group>(null);
 
-  const modelG: any = useGLTF(MONSTER1_MODEL_URL as any);
   const walkG: any = useGLTF(MONSTER1_WALK_URL as any);
   const runG: any = useGLTF(MONSTER1_RUN_URL as any);
   const atkG: any = useGLTF(MONSTER1_ATTACK_URL as any);
 
-  const baseScene: any = modelG?.scene ?? (Array.isArray(modelG) ? modelG[0]?.scene : null);
+  const baseScene: any =
+    (walkG && walkG.scene) ? walkG.scene :
+    (Array.isArray(walkG) ? walkG[0]?.scene : null);
 
   const obj = useMemo<any>(() => {
     if (!baseScene) return null;
@@ -422,23 +428,21 @@ function resolveSphereMeshBVH(
 
   const clips = useMemo<THREE.AnimationClip[]>(() => {
     const out: THREE.AnimationClip[] = [];
-    const add = (g: any) => {
+
+    const add = (g: any, name: EnemyAnim) => {
       const arr: any[] = Array.isArray(g?.animations) ? g.animations : [];
       for (const c of arr) {
         const cc: any = c?.clone ? c.clone() : c;
-        if (cc) out.push(cc);
+        if (!cc) continue;
+        cc.name = name;
+        out.push(cc);
       }
     };
-    add(walkG);
-    add(runG);
-    add(atkG);
 
-    for (const c of out) {
-      const n = String(c.name || '').toLowerCase();
-      if (n.includes('run')) c.name = 'run';
-      else if (n.includes('walk')) c.name = 'walk';
-      else if (n.includes('attack') || n.includes('combo') || n.includes('hit')) c.name = 'attack';
-    }
+    add(walkG, 'walk');
+    add(runG, 'run');
+    add(atkG, 'attack');
+
     return out;
   }, [walkG, runG, atkG]);
 
@@ -447,33 +451,40 @@ function resolveSphereMeshBVH(
   useEffect(() => {
     if (!actions) return;
 
-    const key = props.anim;
-    const act: any =
-      (actions as any)[key] ??
-      (actions as any)['walk'] ??
-      (actions as any)[Object.keys(actions)[0]];
+    const key = props.anim || 'walk';
+    const keys = Object.keys(actions as any);
 
+    let act: any = (actions as any)[key];
+    if (!act && key === 'run') act = (actions as any)['walk'];
+    if (!act && keys.length) act = (actions as any)[keys[0]];
     if (!act) return;
 
-    for (const k of Object.keys(actions)) {
+    for (const k of keys) {
       const a: any = (actions as any)[k];
-      if (a && a !== act) a.fadeOut(0.12);
+      if (a && a !== act) {
+        try { a.fadeOut(0.12); } catch {}
+      }
     }
 
-    act.reset();
-    act.fadeIn(0.12);
+    try {
+      act.reset();
+      act.fadeIn(0.12);
 
-    if (key === 'attack') {
-      act.setLoop(THREE.LoopOnce, 1);
-      act.clampWhenFinished = true;
-    } else {
-      act.setLoop(THREE.LoopRepeat, Infinity);
-      act.clampWhenFinished = false;
-    }
+      if (key === 'attack') {
+        act.setLoop(THREE.LoopOnce, 1);
+        act.clampWhenFinished = true;
+      } else {
+        act.setLoop(THREE.LoopRepeat, Infinity);
+        act.clampWhenFinished = false;
+      }
 
-    act.play();
-    return () => { try { act.fadeOut(0.10); } catch (e) {} };
-  }, [props.anim, actions]);
+      act.play();
+    } catch {}
+
+    return () => {
+      try { act.fadeOut(0.10); } catch {}
+    };
+  }, [actions, props.anim]);
 
   if (!obj) return null;
 
@@ -483,6 +494,7 @@ function resolveSphereMeshBVH(
     </group>
   );
 }
+
 
 function Chunk(props: { idx: number; centerZ: number; showGazebo?: boolean; onMountains?: (idx: number, roots: any[]) => void; onTrees?: (idx: number, boxes: AABB2[]) => void; }) {
   const { idx, centerZ } = props;
@@ -961,45 +973,82 @@ spawnT.current += stepDt;
           fireAtNearest(p);
         }
 
-        const alive = enemiesRef.current.filter(e => e.hp > 0);
-        if (alive.length) {
-          let moved = false;
-                  const nextEnemies = alive.map(e => {
-          const dVec = p.clone().sub(e.pos);
-          dVec.y = 0;
-          const d0 = dVec.length();
-          const dir = d0 > 1e-6 ? dVec.multiplyScalar(1 / d0) : new THREE.Vector3(0, 0, 1);
+          const alive = enemiesRef.current.filter(e => e.hp > 0);
+          if (alive.length) {
+            let moved = false;
+            let changed = false;
 
-          let atkCd = Math.max(0, (e.atkCd ?? 0) - stepDt);
-          const reach = e.kind === 'boss' ? 1.85 : 1.25;
+            const AGGRO_RANGE = 16.0;
+            const WANDER_TURN_SECS = 1.6;
+            const WANDER_SPEED = 0.65;
 
-          if (atkCd > 0) {
-            return { ...e, atkCd, anim: 'attack' as EnemyAnim };
+            const nextEnemies = alive.map(e => {
+              const dVec = p.clone().sub(e.pos);
+              dVec.y = 0;
+              const d0 = dVec.length();
+
+              let atkCd = Math.max(0, (e.atkCd ?? 0) - stepDt);
+              const reach = e.kind === 'boss' ? 1.85 : 1.25;
+
+              if (atkCd > 0) {
+                if (e.anim !== 'attack') changed = true;
+                return { ...e, atkCd, anim: 'attack' as EnemyAnim };
+              }
+
+              if (d0 <= reach) {
+                changed = true;
+                return { ...e, atkCd: 0.85, anim: 'attack' as EnemyAnim };
+              }
+
+              const aggro = (e.aggro || d0 <= AGGRO_RANGE);
+
+              let dir: THREE.Vector3;
+              let ry: number;
+              let wanderYaw = e.wanderYaw ?? 0;
+              let wanderT = e.wanderT ?? 0;
+
+              if (aggro) {
+                const chase = d0 > 1e-6 ? dVec.multiplyScalar(1 / d0) : new THREE.Vector3(0, 0, 1);
+                dir = chase;
+                ry = Math.atan2(dir.x, dir.z);
+              } else {
+                wanderT += stepDt;
+                if (wanderT >= WANDER_TURN_SECS) {
+                  wanderT = 0;
+                  wanderYaw = (Math.random() * Math.PI * 2);
+                }
+                ry = wanderYaw;
+                dir = new THREE.Vector3(Math.sin(ry), 0, Math.cos(ry));
+              }
+
+              const baseSpd = e.baseSpd ?? e.spd;
+              const moveSpd = aggro ? (e.runner ? baseSpd * 2.0 : baseSpd) : (baseSpd * WANDER_SPEED);
+              const step = aggro
+                ? Math.min(Math.max(0, d0 - reach), moveSpd * stepDt)
+                : Math.min(moveSpd * stepDt, 0.9 * stepDt);
+
+              const locomotion: EnemyAnim = aggro ? (e.runner ? 'run' : 'walk') : 'walk';
+
+              if (aggro !== e.aggro) changed = true;
+              if (wanderYaw !== e.wanderYaw || wanderT !== e.wanderT) changed = true;
+              if (locomotion !== e.anim) changed = true;
+
+              if (step > 0.0001) {
+                moved = true;
+                const ep = e.pos.clone().add(dir.multiplyScalar(step));
+                resolveCircleAABBs(ep, ENEMY_RADIUS, nearPodiumBoxes);
+                const eTree = treeBoxesRef.current;
+                if (eTree.length) resolveCircleAABBs(ep, ENEMY_RADIUS, eTree);
+                resolveSphereMeshBVH(ep, ENEMY_RADIUS, tmp);
+                return { ...e, aggro, wanderYaw, wanderT, pos: ep, ry, atkCd, anim: locomotion };
+              }
+
+              return { ...e, aggro, wanderYaw, wanderT, ry, atkCd, anim: locomotion };
+            });
+
+            if (moved || changed) setEnemies(nextEnemies);
           }
 
-          if (d0 <= reach) {
-            return { ...e, atkCd: 0.85, anim: 'attack' as EnemyAnim };
-          }
-
-          const step = Math.min(Math.max(0, d0 - reach), e.spd * stepDt);
-          const ry = Math.atan2(dir.x, dir.z);
-
-          if (step > 0.0001) {
-            moved = true;
-            const ep = e.pos.clone().add(dir.multiplyScalar(step));
-            resolveCircleAABBs(ep, ENEMY_RADIUS, nearPodiumBoxes);
-            const eTree = treeBoxesRef.current;
-            if (eTree.length) {
-              resolveCircleAABBs(ep, ENEMY_RADIUS, eTree);
-            }
-            resolveSphereMeshBVH(ep, ENEMY_RADIUS, tmp);
-            return { ...e, pos: ep, ry, atkCd, anim: 'run' as EnemyAnim };
-          }
-
-          return { ...e, ry, atkCd, anim: 'walk' as EnemyAnim };
-        });
-        if (moved) setEnemies(nextEnemies);
-        }
 
         const currentEnemies = enemiesRef.current.slice();
         const nextProjectiles: Projectile[] = [];
@@ -1121,9 +1170,13 @@ spawnT.current += stepDt;
 
       {enemies.map((e) => (
         <group key={e.id}>
-          <Monster1GLB
+            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[e.pos.x, 0.02, e.pos.z]}>
+              <circleGeometry args={[e.kind === 'boss' ? 1.6 : 0.9, 24]} />
+              <meshBasicMaterial transparent opacity={0.22} color={'#000'} depthWrite={false} />
+            </mesh>
+            <Monster1GLB
               position={[e.pos.x, e.pos.y, e.pos.z]}
-              scale={e.kind === 'boss' ? 2.6 : 1.4}
+              scale={e.kind === 'boss' ? 1.3 : 0.7}
               rotationY={e.ry || 0}
               anim={e.anim || 'walk'}
             />
