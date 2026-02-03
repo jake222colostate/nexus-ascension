@@ -51,7 +51,6 @@ const MOUNTAIN_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object
 
 const GAZEBO_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/spawn_gazebo.glb';
 const PATH_GLB_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/path.glb';
-const PATH_DEBUG_VER = "v2";
 const PODIUM_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/podium_v1.glb';
   const SKYBOX_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/skybox1.jpg';
 const FOREST_TREE_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/forest_tree.glb';
@@ -80,14 +79,13 @@ function MountainGLB(props: { position: [number, number, number]; scale?: number
   }, [scene]);
 
   return (
-      <group
-        position={props.position}
-        rotation={[0, props.rotationY ?? 0, 0]}
-        scale={props.scale ?? 1}
-      >
-        <primitive object={obj} position={[0, 0, 0]} />
-      </group>
-    );
+    <primitive
+      object={obj}
+      position={props.position}
+      scale={props.scale ?? 1}
+      rotation={[0, props.rotationY ?? 0, 0]}
+    />
+  );
 }
   function SkyboxAndFog() {
     const { scene } = useThree();
@@ -162,56 +160,27 @@ function PodiumGLB(props: { position: [number, number, number]; scale?: number |
     </group>
   );
 }
-  function PathGLB(props: {
-    position: [number, number, number];
-    scale?: number | [number, number, number];
-    rotationY?: number;
-    targetW?: number; // desired X size in world units
-    targetL?: number; // desired Z size in world units
-  }) {
-    const { scene } = useGLTF(PATH_GLB_URL);
-
-    const memo = useMemo(() => {
-      const clone: any = scene.clone(true);
-      const size = new THREE.Vector3(1, 1, 1);
-      try {
-        const box = new THREE.Box3().setFromObject(clone);
-        box.getSize(size);
-        if (!isFinite(size.x) || size.x <= 1e-6) size.x = 1;
-        if (!isFinite(size.y) || size.y <= 1e-6) size.y = 1;
-        if (!isFinite(size.z) || size.z <= 1e-6) size.z = 1;
-      } catch {}
-      return { obj: clone as THREE.Object3D, size };
-    }, [scene]);
-
-    const base = props.scale ?? 1;
-
-    const bx = memo.size.x || 1;
-    const bz = memo.size.z || 1;
-
-    const tw = props.targetW ?? bx;
-    const tl = props.targetL ?? bz;
-
-    const sx = tw / bx;
-    const sz = tl / bz;
-    const sy = (sx + sz) * 0.5;
-
-    let scale: any;
-    if (typeof base === 'number') scale = [sx * base, sy * base, sz * base];
-    else scale = [sx * base[0], sy * base[1], sz * base[2]];
-
-    return (
-      <primitive
-        object={memo.obj}
-        position={props.position}
-        scale={scale}
-        rotation={[0, props.rotationY ?? 0, 0]}
-      />
-    );
-  }
 
 
+function PathGLB(props: { position: [number, number, number]; scale?: number | [number, number, number]; rotationY?: number }) {
+  const { scene } = useGLTF(PATH_GLB_URL);
 
+  const obj = useMemo<THREE.Object3D>(() => {
+    const clone = scene.clone(true);
+    return clone;
+  }, [scene]);
+
+  return (
+    <primitive
+      object={obj}
+      position={props.position}
+      scale={props.scale ?? 1}
+      rotation={[0, props.rotationY ?? 0, 0]}
+    />
+  );
+}
+
+/
 function ForestTreeGLB(props: { position: [number, number, number]; scale?: number; rotationY?: number }) {
   const { scene } = useGLTF(FOREST_FOREST_TREE_URL);
 
@@ -241,13 +210,6 @@ function ForestTreeGLB(props: { position: [number, number, number]; scale?: numb
 }
 function clamp(v: number, lo: number, hi: number) { return Math.max(lo, Math.min(hi, v)); }
 function rand(a: number, b: number) { return a + Math.random() * (b - a); }
-function seeded(idx: number) {
-  let s = (idx * 1664525 + 1013904223) >>> 0;
-  return () => {
-    s = (s * 1664525 + 1013904223) >>> 0;
-    return s / 4294967296;
-  };
-}
 
 type AABB2 = { id: string; minX: number; maxX: number; minZ: number; maxZ: number };
 
@@ -491,30 +453,6 @@ return (
         <planeGeometry args={[PATH_W, CHUNK_LEN]} />
         <meshStandardMaterial color={'#2f3a2f'} polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-1} />
       </mesh>
-
-        {(() => {
-          const r = seeded(idx);
-          const tiles = Array.from({ length: 6 }, (_, k) => {
-            const z = -CHUNK_LEN * 0.5 + (k + 0.5) * (CHUNK_LEN / 6);
-            const x = (r() - 0.5) * 0.55;
-            const ry = (r() - 0.5) * 0.35;
-            const s = 1.0 + (r() - 0.5) * 0.10;
-            return { id: `p_${idx}_${k}`, x, z, ry, s, mx: (r() < 0.5) ? -1 : 1 };
-          });
-          return (
-            <group position={[0, 0.06, 0]}>
-              {tiles.map(t => (
-                <PathGLB
-                  key={t.id}
-                  position={[t.x, 0.04, t.z]}
-                    targetW={PATH_W}
-                    targetL={CHUNK_LEN / 6}
-                  scale={[t.s * t.mx, t.s, t.s]}rotationY={t.ry}
-                />
-              ))}
-            </group>
-          );
-        })()}
 
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
         <planeGeometry args={[GRASS_W, CHUNK_LEN]} />
