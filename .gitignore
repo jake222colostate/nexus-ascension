@@ -51,3 +51,19 @@ backups/
 # local volume / persistence markers
 .PERSISTENCE_OK
 .VOLUME_WRITE_TEST
+
+# editor/backup junk
+*~
+*.bak
+*.backup
+*.orig
+*.old
+*.tmp
+*.save
+*.bkp
+*.swp
+*.swo
+*.swx
+.#*
+#*#
+*.rej

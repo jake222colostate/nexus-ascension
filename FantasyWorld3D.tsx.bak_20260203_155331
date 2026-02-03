@@ -6,7 +6,7 @@ import { useThree } from '@react-three/fiber';
 import { MeshBVH, acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from "three-mesh-bvh";
 import { View, StyleSheet, useWindowDimensions} from 'react-native';
 import { Canvas, useFrame } from '@react-three/fiber/native';
-import { useGLTF, useProgress, Clone, useAnimations } from '@react-three/drei/native';
+import { useGLTF, useProgress, Clone } from '@react-three/drei/native';
 import * as THREE from 'three';
 // === BVH PATCH (must run once, same THREE instance as R3F) ===
 (THREE.BufferGeometry as any).prototype.computeBoundsTree = computeBoundsTree;
@@ -15,7 +15,6 @@ import * as THREE from 'three';
 
 
 type EnemyKind = 'enemy' | 'boss';
-type EnemyAnim = 'walk' | 'run' | 'attack';
 type Enemy = { id: string; kind: EnemyKind; pos: THREE.Vector3; hp: number; maxHp: number; spd: number };
 type Projectile = { id: string; pos: THREE.Vector3; vel: THREE.Vector3; ttl: number };
 
@@ -56,13 +55,6 @@ const PATH_DEBUG_VER = "v2";
 const PODIUM_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/podium_v1.glb';
   const SKYBOX_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/skybox1.jpg';
 const FOREST_TREE_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/forest_tree.glb';
-const MONSTER1_RUN_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/monster1/monster1_running.glb';
-const MONSTER1_WALK_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/monster1/monster1_walking.glb';
-const MONSTER1_ATTACK_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/monster1/monster1_attack_v1.glb';
-useGLTF.preload(MONSTER1_RUN_URL);
-useGLTF.preload(MONSTER1_WALK_URL);
-useGLTF.preload(MONSTER1_ATTACK_URL);
-
 useGLTF.preload(MOUNTAIN_URL);
 useGLTF.preload(GAZEBO_URL);
 useGLTF.preload(PATH_GLB_URL);
@@ -164,10 +156,24 @@ if (typeof minY === 'number' && isFinite(minY) && Math.abs(minY) > 1e-5) {
 function PodiumGLB(props: { position: [number, number, number]; scale?: number | [number, number, number]; rotationY?: number }) {
   const { scene } = useGLTF(PODIUM_URL);
 
+  const obj = useMemo(() => {
+    const c: any = scene.clone(true);
+    try {
+      c.traverse((m: any) => {
+        if (!m?.isMesh) return;
+        m.raycast = () => null;
+      });
+    } catch {}
+    return c;
+  }, [scene]);
+
   return (
-    <group position={props.position} scale={props.scale || 1.0} rotation={[0, props.rotationY || 0, 0]}>
-      <Clone object={scene} />
-    </group>
+    <primitive
+      object={obj}
+      position={props.position}
+      scale={props.scale ?? 1}
+      rotation={[0, props.rotationY ?? 0, 0]}
+    />
   );
 }
   function PathGLB(props: {
@@ -395,42 +401,6 @@ function makeEnemy(kind: EnemyKind, z: number): Enemy {
   const hp = maxHp;
   const spd = kind === 'boss' ? 2.1 : 2.7;
   return { id, kind, pos: new THREE.Vector3(x, kind === 'boss' ? 1.2 : 0.7, z), hp, maxHp, spd };
-}
-
-
-function Monster1GLB(props: { position: [number, number, number]; scale?: number; rotationY?: number; anim: EnemyAnim }) {
-  const group = useRef<THREE.Group>(null as any);
-  const walk: any = useGLTF(MONSTER1_WALK_URL as any);
-  const run: any = useGLTF(MONSTER1_RUN_URL as any);
-  const attack: any = useGLTF(MONSTER1_ATTACK_URL as any);
-
-  const walkScene = useMemo(() => (walk?.scene ? walk.scene.clone(true) : null), [walk]);
-  const runScene = useMemo(() => (run?.scene ? run.scene.clone(true) : null), [run]);
-  const attackScene = useMemo(() => (attack?.scene ? attack.scene.clone(true) : null), [attack]);
-
-  const walkAn = useAnimations(walk?.animations || [], group);
-  const runAn = useAnimations(run?.animations || [], group);
-  const attackAn = useAnimations(attack?.animations || [], group);
-
-  useEffect(() => {
-    const stopAll = (a: any) => { try { Object.values(a?.actions || {}).forEach((x: any) => x?.stop?.()); } catch {} };
-    stopAll(walkAn); stopAll(runAn); stopAll(attackAn);
-    const pick = (props.anim === "attack") ? attackAn : (props.anim === "run") ? runAn : walkAn;
-    let a0: any = null;
-    try { const acts: any[] = Object.values(pick?.actions || {}) as any; a0 = acts[0]; } catch {}
-    if (a0) { try { a0.reset?.(); a0.fadeIn?.(0.08); a0.play?.(); } catch {} }
-    return () => { stopAll(walkAn); stopAll(runAn); stopAll(attackAn); };
-  }, [props.anim]);
-
-  const s = props.scale ?? 1.0;
-  const ry = props.rotationY ?? 0;
-  return (
-    <group ref={group} position={props.position} rotation={[0, ry, 0]} scale={[s, s, s]}>
-      {props.anim === "attack" ? (attackScene ? <primitive object={attackScene} /> : null)
-        : props.anim === "run" ? (runScene ? <primitive object={runScene} /> : null)
-        : (walkScene ? <primitive object={walkScene} /> : null)}
-    </group>
-  );
 }
 
 function Chunk(props: { idx: number; centerZ: number; showGazebo?: boolean; onMountains?: (idx: number, roots: any[]) => void; onTrees?: (idx: number, boxes: AABB2[]) => void; }) {
@@ -1019,17 +989,23 @@ return { ...e, pos: ep };
         const x = pd.side * 3.8;
         return (
             <group
-              key={pd.id}
-              position={[x, 1.05, pd.z]}
-              onPointerDown={() => {
-                if (collectedRef.current[pd.id]) return;
-                collectedRef.current[pd.id] = 1;
-                setCollectedTick(t => t + 1);
-                props.onPodium();
-              }}
-            >
-              <PodiumGLB position={[0, 0, 0]} scale={1.0} rotationY={0} />
-            </group>
+                key={pd.id}
+                position={[x, 1.05, pd.z]}
+              >
+                <mesh
+                  position={[0, 0, 0]}
+                  onPointerDown={() => {
+                    if (collectedRef.current[pd.id]) return;
+                    collectedRef.current[pd.id] = 1;
+                    setCollectedTick(t => t + 1);
+                    props.onPodium();
+                  }}
+                >
+                  <boxGeometry args={[3.2, 2.2, 3.2]} />
+                  <meshBasicMaterial transparent opacity={0} />
+                </mesh>
+                <PodiumGLB position={[0, 0, 0]} scale={1.0} rotationY={0} />
+              </group>
           );
       })}
 
@@ -1051,12 +1027,10 @@ return { ...e, pos: ep };
 
       {enemies.map((e) => (
         <group key={e.id}>
-          <Monster1GLB
-              position={[e.pos.x, e.pos.y, e.pos.z]}
-              scale={e.kind === 'boss' ? 2.6 : 1.4}
-              rotationY={(e as any).ry || 0}
-              anim={((e as any).anim || 'walk')}
-            />
+          <mesh position={[e.pos.x, e.pos.y, e.pos.z]} scale={e.kind === 'boss' ? [4, 4, 4] : [1.5, 1.5, 1.5]}>
+            <boxGeometry args={[1, 1, 1]} />
+            <meshStandardMaterial color={e.kind === 'boss' ? '#7b2b2b' : '#8b2f2f'} />
+          </mesh>
 
           <mesh position={[e.pos.x, e.pos.y + (e.kind === 'boss' ? 3.2 : 1.6), e.pos.z]}>
             <planeGeometry args={[e.kind === 'boss' ? 3.4 : 1.6, 0.18]} />
