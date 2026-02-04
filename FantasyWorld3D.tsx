@@ -5,6 +5,15 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber/native';
 import { useGLTF, useProgress, Clone, useAnimations, useTexture } from '@react-three/drei/native';
 import * as THREE from 'three';
 import { SkeletonUtils } from 'three-stdlib';
+type FantasyWorld3DProps = {
+  shootPulse: number;
+  bulletDmgEnemy: number;
+  bulletDmgBoss: number;
+  onPodium?: () => void | Promise<void>;
+  onMonument?: () => void;
+  onEnemyKilled?: (kind: "enemy" | "boss") => void;
+};
+
 // === BVH PATCH (must run once, same THREE instance as R3F) ===
 (THREE.BufferGeometry as any).prototype.computeBoundsTree = computeBoundsTree;
 (THREE.BufferGeometry as any).prototype.disposeBoundsTree = disposeBoundsTree;
@@ -1206,7 +1215,7 @@ spawnT.current += stepDt;
   );
 }
 
-export default function FantasyWorld3D(props: {
+function FantasyWorld3D(props: {
   walking?: boolean;
   shootPulse: number;
   bulletDmgEnemy: number;
@@ -1425,3 +1434,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.18)',
   },
 });
+
+
+
+export default FantasyWorld3D;

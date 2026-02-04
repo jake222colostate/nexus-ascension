@@ -1020,7 +1020,7 @@ function CombatWorld({ cfg }: { cfg: CombatConfig }) {
             bulletDmgBoss={bulletDmgBoss}
             onPodium={() => openPodium()}
             onMonument={() => openMonumentBoss()}
-            onEnemyKilled={(k) => onEnemyKilled(k)}
+            onEnemyKilled={(k: 'enemy' | 'boss') => onEnemyKilled(k)}
           />
 
           <View style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 }} pointerEvents="box-none">
