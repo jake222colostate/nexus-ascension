@@ -6,6 +6,8 @@ import { UpgradeCategory, UpgradeLevels, WorldKey } from '../systems/upgrades/up
 
 export function useGameState() {
   const [ready, setReady] = useState(false);
+  const [bootProgress, setBootProgress] = useState(0);
+  const [bootAsset, setBootAsset] = useState('Initializing Systems');
   const [mana, setMana] = useState(0);
   const [energy, setEnergy] = useState(0);
   const [fantasyTier, setFantasyTier] = useState(1);
@@ -18,10 +20,34 @@ export function useGameState() {
   const [activeUpgradeTab, setActiveUpgradeTab] = useState<UpgradeCategory>('fantasy');
 
   useEffect(() => {
-    loadState().then((s) => {
+    let active = true;
+    setBootProgress(0);
+    setBootAsset('Reading Save Data');
+
+    const run = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 90));
+      if (!active) return;
+      setBootProgress(20);
+      setBootAsset('Applying Upgrade Ledger');
+
+      const s = await loadState();
+      if (!active) return;
+      setBootProgress(70);
+      setBootAsset('Hydrating World State');
       setMana(s.mana); setEnergy(s.energy); setFantasyTier(s.fantasyTier); setSkybaseTier(s.skybaseTier);
-      setMonumentsFantasy(s.monumentsFantasy); setMonumentsSkybase(s.monumentsSkybase); setUpgrades(s.upgrades); setReady(true);
-    });
+      setMonumentsFantasy(s.monumentsFantasy); setMonumentsSkybase(s.monumentsSkybase); setUpgrades(s.upgrades);
+
+      await new Promise((resolve) => setTimeout(resolve, 90));
+      if (!active) return;
+      setBootProgress(100);
+      setBootAsset('Ready');
+      setReady(true);
+    };
+
+    run();
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -83,6 +109,8 @@ export function useGameState() {
 
   return {
     ready,
+    bootProgress,
+    bootAsset,
     mana,
     energy,
     fantasyTier,

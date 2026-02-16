@@ -4,12 +4,14 @@ import FantasyWorld3D from './FantasyWorld3D';
 import { GameHUD } from '../../ui/hud/GameHUD';
 import { WorldLoadingScreen } from '../../ui/loading/WorldLoadingScreen';
 import { fantasyTips } from './fantasyLogic';
+import { useWorldLoader } from '../../ui/loading/useWorldLoader';
 
 export function FantasyScreen({ navigation, game }: any) {
   const [shootPulse, setShootPulse] = useState(0);
   const [moving, setMoving] = useState(false);
   const [upgradesOpen, setUpgradesOpen] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [switchingTarget, setSwitchingTarget] = useState<'Hub' | 'Fantasy' | 'Skybase' | null>(null);
+  const loader = useWorldLoader('fantasy', fantasyTips[0]);
 
   const shootGain = game.stats.fantasyTapGain;
   const onShoot = useCallback(() => {
@@ -23,12 +25,18 @@ export function FantasyScreen({ navigation, game }: any) {
     `K/P ${Math.floor(game.fantasyTier * 10)}/${Math.max(1, game.fantasyTier)}`,
   ] as [string, string, string], [game]);
 
+  const onSwitchWorld = useCallback((target: 'Hub' | 'Fantasy' | 'Skybase') => {
+    if (target === 'Fantasy') return;
+    setSwitchingTarget(target);
+    setTimeout(() => navigation.navigate(target), 60);
+  }, [navigation]);
+
   return (
     <View style={{ flex: 1, backgroundColor: '#000' }}>
-      <FantasyWorld3D shootPulse={shootPulse} moving={moving} damageMult={game.stats.fantasyDamageMult} onReady={() => setLoading(false)} onEnemyKilled={() => game.addMana(2)} />
+      <FantasyWorld3D shootPulse={shootPulse} moving={moving} damageMult={game.stats.fantasyDamageMult} onReady={loader.markWorldReady} onEnemyKilled={() => game.addMana(2)} />
       <GameHUD
         currentWorld="Fantasy"
-        onSwitchWorld={(target) => navigation.navigate(target)}
+        onSwitchWorld={onSwitchWorld}
         manaText={`Mana ${Math.floor(game.mana)} • +${game.stats.fantasyAutoGain.toFixed(2)}/s`}
         statRight={statRight}
         shootLabel={`Shoot +${shootGain}`}
@@ -45,7 +53,8 @@ export function FantasyScreen({ navigation, game }: any) {
         lockReason={game.lockReason}
         onBuyUpgrade={game.buyUpgrade}
       />
-      {loading ? <WorldLoadingScreen world="fantasy" progress={95} asset="Scene Stabilization" tip={fantasyTips[0]} /> : null}
+      {loader.visible ? <WorldLoadingScreen world="fantasy" progress={loader.progress.progress} asset={loader.progress.asset} tip={loader.tip} /> : null}
+      {switchingTarget ? <WorldLoadingScreen world="fantasy" progress={25} asset={`Jumping to ${switchingTarget}`} tip="Stabilizing world transfer…" /> : null}
     </View>
   );
 }

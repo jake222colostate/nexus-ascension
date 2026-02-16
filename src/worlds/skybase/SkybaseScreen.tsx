@@ -4,12 +4,14 @@ import SkybaseWorld3D from './SkybaseWorld3D';
 import { GameHUD } from '../../ui/hud/GameHUD';
 import { WorldLoadingScreen } from '../../ui/loading/WorldLoadingScreen';
 import { skybaseTips } from './skybaseLogic';
+import { useWorldLoader } from '../../ui/loading/useWorldLoader';
 
 export function SkybaseScreen({ navigation, game }: any) {
   const [shootPulse, setShootPulse] = useState(0);
   const [moving, setMoving] = useState(false);
   const [upgradesOpen, setUpgradesOpen] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [switchingTarget, setSwitchingTarget] = useState<'Hub' | 'Fantasy' | 'Skybase' | null>(null);
+  const loader = useWorldLoader('skybase', skybaseTips[0]);
 
   const shootGain = game.stats.skybaseTapGain;
   const onShoot = useCallback(() => {
@@ -23,12 +25,18 @@ export function SkybaseScreen({ navigation, game }: any) {
     `K/P ${Math.floor(game.skybaseTier * 10)}/${Math.max(1, game.skybaseTier)}`,
   ] as [string, string, string], [game]);
 
+  const onSwitchWorld = useCallback((target: 'Hub' | 'Fantasy' | 'Skybase') => {
+    if (target === 'Skybase') return;
+    setSwitchingTarget(target);
+    setTimeout(() => navigation.navigate(target), 60);
+  }, [navigation]);
+
   return (
     <View style={{ flex: 1, backgroundColor: '#000' }}>
-      <SkybaseWorld3D shootPulse={shootPulse} moving={moving} damageMult={game.stats.skybaseDamageMult} onReady={() => setLoading(false)} onEnemyKilled={() => game.addEnergy(2)} />
+      <SkybaseWorld3D shootPulse={shootPulse} moving={moving} damageMult={game.stats.skybaseDamageMult} onReady={loader.markWorldReady} onEnemyKilled={() => game.addEnergy(2)} />
       <GameHUD
         currentWorld="Skybase"
-        onSwitchWorld={(target) => navigation.navigate(target)}
+        onSwitchWorld={onSwitchWorld}
         manaText={`Energy ${Math.floor(game.energy)} • +${game.stats.skybaseAutoGain.toFixed(2)}/s`}
         statRight={statRight}
         shootLabel={`Shoot +${shootGain}`}
@@ -45,7 +53,8 @@ export function SkybaseScreen({ navigation, game }: any) {
         lockReason={game.lockReason}
         onBuyUpgrade={game.buyUpgrade}
       />
-      {loading ? <WorldLoadingScreen world="skybase" progress={95} asset="Scene Stabilization" tip={skybaseTips[0]} /> : null}
+      {loader.visible ? <WorldLoadingScreen world="skybase" progress={loader.progress.progress} asset={loader.progress.asset} tip={loader.tip} /> : null}
+      {switchingTarget ? <WorldLoadingScreen world="skybase" progress={25} asset={`Jumping to ${switchingTarget}`} tip="Stabilizing world transfer…" /> : null}
     </View>
   );
 }

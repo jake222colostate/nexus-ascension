@@ -33,14 +33,14 @@ export function GameHUD(props: {
 
   return (
     <>
-      <View pointerEvents="box-none" style={[hudStyles.root, { paddingTop: insets.top + 4, paddingBottom: insets.bottom + 10 }]}>
-        <View style={hudStyles.topWrap}>
+      <View pointerEvents="box-none" style={[hudStyles.root, { paddingTop: insets.top + 2, paddingBottom: insets.bottom + 10 }]}> 
+        <View style={hudStyles.topWrap} pointerEvents="box-none">
           <WorldTabs current={props.currentWorld} onGo={props.onSwitchWorld} />
           <View style={hudStyles.row}>
             <View style={hudStyles.leftStack}>
               <StatPill text={props.manaText} />
-              <Pressable style={[hudStyles.pill, { alignSelf: 'flex-start', paddingVertical: 7 }]} onPress={props.onOpenUpgrades}>
-                <Text style={hudStyles.pillText}>Upgrades</Text>
+              <Pressable style={hudStyles.upgradesButton} onPress={props.onOpenUpgrades}>
+                <Text style={hudStyles.upgradesText}>UPGRADES</Text>
               </Pressable>
             </View>
             <View style={hudStyles.rightStack}>
@@ -49,18 +49,24 @@ export function GameHUD(props: {
           </View>
         </View>
 
-        <View style={hudStyles.bottomRow}>
+        <View style={hudStyles.bottomRow} pointerEvents="box-none">
           <Pressable onPressIn={props.onMoveStart} onPressOut={props.onMoveEnd}>
-            <View style={hudStyles.joystickRing}><View style={hudStyles.joystick}><Text style={{ color: 'white', fontWeight: '900' }}>MOVE</Text></View></View>
+            <View style={hudStyles.joystickOuter}>
+              <View style={hudStyles.joystickRing}>
+                <View style={hudStyles.joystick}><Text style={{ color: 'white', fontWeight: '900' }}>MOVE</Text></View>
+              </View>
+            </View>
           </Pressable>
-          <Pressable style={hudStyles.shootBtn} onPress={props.onShoot}><Text style={hudStyles.shootText}>{props.shootLabel}</Text></Pressable>
+          <Pressable style={hudStyles.shootBtn} onPress={props.onShoot}>
+            <Text style={hudStyles.shootText}>◎ {props.shootLabel}</Text>
+          </Pressable>
         </View>
         <Toast text={props.toast} />
       </View>
 
       <Modal visible={props.upgradesOpen} transparent animationType="slide" onRequestClose={props.onCloseUpgrades}>
         <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }} onPress={props.onCloseUpgrades} />
-        <View style={{ position: 'absolute', left: 10, right: 10, bottom: insets.bottom + 10, backgroundColor: '#101826', borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)', maxHeight: '75%' }}>
+        <View style={{ position: 'absolute', left: 10, right: 10, bottom: insets.bottom + 10, backgroundColor: '#101826', borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)', maxHeight: '76%' }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', padding: 12 }}>
             {(['fantasy', 'skybase', 'meta'] as const).map((tab) => (
               <Pressable key={tab} onPress={() => props.onUpgradeTab(tab)} style={[hudStyles.pill, { backgroundColor: props.activeUpgradeTab === tab ? 'rgba(105,157,255,0.75)' : 'rgba(12,17,28,0.8)' }]}>
@@ -78,9 +84,11 @@ export function GameHUD(props: {
                   <Text style={{ color: 'white', fontWeight: '900' }}>{up.name} Lv.{level}</Text>
                   <Text style={{ color: '#cbd1df' }}>{up.description}</Text>
                   <Text style={{ color: '#9cc0ff', marginTop: 4 }}>Next: {up.effectLabel(level + 1)}</Text>
-                  <Text style={{ color: '#d9ddf1', marginTop: 4 }}>Cost: {cost}</Text>
+                  <Text style={{ color: '#d9ddf1', marginTop: 4 }}>Cost Scaling: {up.baseCost} × {up.growth.toFixed(2)}^Lv</Text>
+                  {up.gate ? <Text style={{ color: '#f8cb88', marginTop: 2 }}>Gate: {up.gate.message}</Text> : null}
+                  {up.prerequisites?.length ? <Text style={{ color: '#f8cb88', marginTop: 2 }}>Requires: {up.prerequisites.map((req) => `${req.upgradeId} Lv.${req.level}`).join(', ')}</Text> : null}
                   <Pressable disabled={locked} onPress={() => props.onBuyUpgrade(up.id)} style={[hudStyles.pill, { marginTop: 8, alignSelf: 'flex-start', opacity: locked ? 0.5 : 1 }]}>
-                    <Text style={hudStyles.pillText}>{locked ? 'Maxed' : 'Buy Upgrade'}</Text>
+                    <Text style={hudStyles.pillText}>{locked ? 'Maxed' : `Buy (${cost})`}</Text>
                   </Pressable>
                 </View>
               );

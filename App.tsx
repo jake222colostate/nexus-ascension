@@ -15,13 +15,13 @@ export default function App() {
   const game = useGameState();
 
   if (!game.ready) {
-    return <WorldLoadingScreen world="hub" progress={20} asset="Boot" tip="Syncing persistent progression" />;
+    return <WorldLoadingScreen world="hub" progress={game.bootProgress} asset={game.bootAsset} tip="Syncing persistent progression" />;
   }
 
   return (
     <SafeAreaProvider>
       <NavigationContainer>
-        <Stack.Navigator initialRouteName="Hub" screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#000' } }}>
+        <Stack.Navigator initialRouteName="Hub" screenOptions={{ headerShown: false, contentStyle: { backgroundColor: 'transparent' }, animation: 'none' }}>
           <Stack.Screen name="Hub">{(props) => <HubScreen {...props} game={game} />}</Stack.Screen>
           <Stack.Screen name="Fantasy">{(props) => <FantasyScreen {...props} game={game} />}</Stack.Screen>
           <Stack.Screen name="Skybase">{(props) => <SkybaseScreen {...props} game={game} />}</Stack.Screen>
