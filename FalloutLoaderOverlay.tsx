@@ -1,67 +1,115 @@
 import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, PanResponder, Text, View, StyleSheet } from 'react-native';
-import { Canvas, useFrame } from '@react-three/fiber/native';
+import { Animated, PanResponder, StyleSheet, Text, View } from 'react-native';
+import {Canvas, useFrame, useLoader} from '@react-three/fiber/native';
 import { useGLTF, useProgress, useTexture } from '@react-three/drei/native';
-import * as THREE from 'three';
-import { MeshBVH } from 'three-mesh-bvh';
+import { GLTFLoader, MeshoptDecoder } from 'three-stdlib';
+
+try { (useGLTF as any).setMeshoptDecoder?.(MeshoptDecoder as any); } catch (e) {}
+
+function _patchLoaderProto(L: any) {
+  try {
+    const P: any = L?.prototype;
+    if (!P || P.__meshopt_patched_any) return;
+    const _load = P.load;
+    const _loadAsync = P.loadAsync;
+    if (typeof _load === 'function') {
+      P.load = function(url: any, onLoad: any, onProgress: any, onError: any) {
+        try { this.setMeshoptDecoder?.(MeshoptDecoder as any); } catch (e) {}
+        return _load.call(this, url, onLoad, onProgress, onError);
+      };
+    }
+    if (typeof _loadAsync === 'function') {
+      P.loadAsync = function(url: any, onProgress: any) {
+        try { this.setMeshoptDecoder?.(MeshoptDecoder as any); } catch (e) {}
+        return _loadAsync.call(this, url, onProgress);
+      };
+    }
+    P.__meshopt_patched_any = true;
+  } catch (e) {}
+}
+
+function _tryPatchModule(mod: any) {
+  try {
+    _patchLoaderProto(mod?.GLTFLoader);
+    _patchLoaderProto(mod?.default);
+  } catch (e) {}
+}
+
+try { _tryPatchModule(require('three/examples/jsm/loaders/GLTFLoader.js')); } catch (e) {}
+try { _tryPatchModule(require('three/examples/jsm/loaders/GLTFLoader')); } catch (e) {}
+try { (GLTFLoader as any).setMeshoptDecoder?.(MeshoptDecoder); } catch (e) {}
 
 function ext(url: string) {
-  const q = url.split('?')[0];
+  const q = (url || '').split('?')[0];
   const m = q.toLowerCase().match(/\.([a-z0-9]+)$/);
   return m ? m[1] : '';
 }
 
-function PreloadOne(props: { url: string; onBvhDone: (url: string) => void }) {
-  const e = ext(props.url);
-
-  if (e === 'glb' || e === 'gltf') {
-    const { scene } = useGLTF(props.url);
-
-    useEffect(() => {
-      if (!scene) return;
-
-      try {
-        scene.traverse((m: any) => {
-          if (!m || !m.isMesh || !m.geometry) return;
-          const g: any = m.geometry;
-          if (!g.boundsTree) {
-            g.boundsTree = new MeshBVH(g);
-          }
-        });
-      } catch (err) {}
-
-      props.onBvhDone(props.url);
-    }, [scene, props]);
-
-    return null;
-  }
-
-  if (e === 'jpg' || e === 'jpeg' || e === 'png' || e === 'webp') {
-    useTexture(props.url);
-    return null;
-  }
-
-  return null;
+function isTex(url: string) {
+  const e = ext(url);
+  return e === 'jpg' || e === 'jpeg' || e === 'png' || e === 'webp';
 }
 
-function LootModel({ url, rotYRef }: { url: string; rotYRef: React.MutableRefObject<number> }) {
-  const { scene } = useGLTF(url);
-  const obj = useMemo(() => scene.clone(true), [scene]);
+function isGltf(url: string) {
+  const e = ext(url);
+  return e === 'glb' || e === 'gltf';
+}
+
+function preloadUrl(url: string) {
+  if (!url) return;
+  try {
+    if (isGltf(url)) {
+      (useGLTF as any).preload?.(
+        url as any,
+        undefined as any,
+        true as any,
+        (loader: any) => {
+          try { loader.setMeshoptDecoder?.(MeshoptDecoder as any); } catch (e) {}
+        }
+      );
+      return;
+    }
+    if (isTex(url)) {
+      (useTexture as any).preload?.(url as any);
+      return;
+    }
+  } catch (e) {}
+}
+
+function Model({ url, rotYRef }: { url: string; rotYRef: React.MutableRefObject<number> }) {
+  const gltf = (useGLTF as any)(
+    url as any,
+    undefined as any,
+    true as any,
+    (loader: any) => {
+      try { loader.setMeshoptDecoder?.(MeshoptDecoder as any); } catch (e) {}
+    }
+  ) as any;
+
+  const scene = gltf?.scene as any;
+
+  const obj = useMemo(() => {
+    try {
+      return scene?.clone?.(true) ?? scene;
+    } catch (e) {
+      return scene;
+    }
+  }, [scene]);
 
   useFrame(() => {
-    obj.rotation.y = rotYRef.current;
+    if (obj) obj.rotation.y = rotYRef.current;
   });
 
+  if (!obj) return null;
   return <primitive object={obj} position={[0, -0.2, 0]} />;
 }
 
-function LootPreview(props: {
-  lootUrl: string;
-  preloadUrls: string[];
-  rotYRef: React.MutableRefObject<number>;
-  onBvhDone: (url: string) => void;
-}) {
-  const unique = useMemo(() => Array.from(new Set(props.preloadUrls.filter(Boolean))), [props.preloadUrls]);
+function PreviewCanvas({ modelUrl, preloadUrls, rotYRef }: { modelUrl: string; preloadUrls: string[]; rotYRef: React.MutableRefObject<number> }) {
+  const unique = useMemo(() => Array.from(new Set((preloadUrls || []).filter(Boolean))), [preloadUrls]);
+
+  useEffect(() => {
+    for (const u of unique) preloadUrl(u);
+  }, [unique]);
 
   return (
     <Canvas
@@ -75,11 +123,8 @@ function LootPreview(props: {
       <ambientLight intensity={1.2} />
       <directionalLight position={[2, 4, 2]} intensity={1.4} />
       <Suspense fallback={null}>
-        {unique.map((u) => (
-          <PreloadOne key={u} url={u} onBvhDone={props.onBvhDone} />
-        ))}
         <group>
-          <LootModel url={props.lootUrl} rotYRef={props.rotYRef} />
+          <Model url={modelUrl} rotYRef={rotYRef} />
         </group>
       </Suspense>
     </Canvas>
@@ -91,89 +136,150 @@ export default function FalloutLoaderOverlay(props: {
   preloadUrls: string[];
   onDone: () => void;
   title?: string;
-  subtitle?: string;
 }) {
   const rotYRef = useRef(0);
-  const opacity = useRef(new Animated.Value(1)).current;
+  const [dragX] = useState(() => new Animated.Value(0));
+  const { active, loaded, total } = useProgress();
 
-  const unique = useMemo(() => Array.from(new Set(props.preloadUrls.filter(Boolean))), [props.preloadUrls]);
-  const glbUrls = useMemo(() => unique.filter((u) => {
-    const e = ext(u);
-    return e === 'glb' || e === 'gltf';
-  }), [unique]);
-
-  const doneSet = useRef<Set<string>>(new Set());
-  const [bvhTick, setBvhTick] = useState(0);
-
-  const onBvhDone = (url: string) => {
-    const e = ext(url);
-    if (e !== 'glb' && e !== 'gltf') return;
-    if (doneSet.current.has(url)) return;
-    doneSet.current.add(url);
-    setBvhTick((n) => n + 1);
-  };
-
-  const bvhReady = glbUrls.length === 0 ? true : doneSet.current.size >= glbUrls.length;
-
-  const { active, progress } = useProgress();
-  const pct = Math.max(0, Math.min(100, Math.round(progress)));
-
-  const doneOnce = useRef(false);
+  const allUrls = useMemo(() => {
+    const list = [props.lootUrl, ...(props.preloadUrls || [])].filter(Boolean) as string[];
+    return Array.from(new Set(list));
+  }, [props.lootUrl, props.preloadUrls]);
 
   useEffect(() => {
-    if (doneOnce.current) return;
-    if (!active && pct >= 100 && bvhReady) {
-      doneOnce.current = true;
-      Animated.timing(opacity, { toValue: 0, duration: 320, useNativeDriver: true }).start(() => {
-        props.onDone();
-      });
-    }
-  }, [active, pct, bvhReady, opacity, props, bvhTick]);
+    for (const u of allUrls) preloadUrl(u);
+  }, [allUrls]);
 
-  const pan = useRef(
-    PanResponder.create({
+  const pct = useMemo(() => {
+    if (!total || total <= 0) return 0;
+    const v = Math.round((loaded / total) * 100);
+    return Math.max(0, Math.min(100, v));
+  }, [loaded, total]);
+
+  const doneCalled = useRef(false);
+  useEffect(() => {
+    if (doneCalled.current) return;
+
+    if (total > 0 && !active && loaded >= total) {
+      doneCalled.current = true;
+      try { props.onDone(); } catch (e) {}
+      return;
+    }
+
+    const t = setTimeout(() => {
+      if (doneCalled.current) return;
+      if (total > 0 && loaded >= total) {
+        doneCalled.current = true;
+        try { props.onDone(); } catch (e) {}
+      }
+    }, 15000);
+
+    return () => clearTimeout(t);
+  }, [active, loaded, total, props]);
+
+  const pan = useMemo(() => {
+    return PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
-      onPanResponderMove: (_evt, g) => {
-        rotYRef.current += (g.dx || 0) * 0.005;
+      onPanResponderMove: (_evt, gs) => {
+        const dx = gs.dx || 0;
+        dragX.setValue(dx);
+        rotYRef.current = dx * 0.01;
       },
-      onPanResponderRelease: () => {},
-      onPanResponderTerminate: () => {},
-    })
-  ).current;
+      onPanResponderRelease: () => {
+        Animated.spring(dragX, { toValue: 0, useNativeDriver: true }).start();
+      },
+      onPanResponderTerminate: () => {
+        Animated.spring(dragX, { toValue: 0, useNativeDriver: true }).start();
+      },
+    });
+  }, [dragX]);
 
   return (
-    <Animated.View style={[styles.root, { opacity }]}>
-      <View style={styles.preview} {...pan.panHandlers}>
-        <LootPreview lootUrl={props.lootUrl} preloadUrls={props.preloadUrls} rotYRef={rotYRef} onBvhDone={onBvhDone} />
+    <View style={styles.root}>
+      <View style={styles.bg} />
+      <View style={styles.previewWrap} {...pan.panHandlers}>
+        <PreviewCanvas modelUrl={props.lootUrl} preloadUrls={allUrls} rotYRef={rotYRef} />
       </View>
 
-      <View pointerEvents="none" style={styles.hudTop}>
-        <Text style={styles.title}>{props.title || 'Loading…'}</Text>
-        <Text style={styles.sub}>{props.subtitle || 'Drag to rotate loot'}</Text>
-      </View>
+      <View style={styles.overlay}>
+        <Text style={styles.title}>{props.title || 'Loading Fantasy World'}</Text>
+        <Text style={styles.sub}>Drag to see Model</Text>
 
-      <View pointerEvents="none" style={styles.hudBottom}>
         <View style={styles.barOuter}>
           <View style={[styles.barInner, { width: `${pct}%` }]} />
         </View>
+
         <Text style={styles.pct}>{pct}%</Text>
       </View>
-    </Animated.View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: '#0a0f18' },
-  preview: { flex: 1 },
-  canvas: { flex: 1 },
-
-  hudTop: { position: 'absolute', left: 0, right: 0, top: 0, paddingTop: 56, paddingHorizontal: 18 },
-  title: { color: '#fff', fontSize: 22, fontWeight: '900' },
-  sub: { color: '#cfcfcf', marginTop: 6, fontSize: 12, fontWeight: '700' },
-
-  hudBottom: { position: 'absolute', left: 18, right: 18, bottom: 34 },
-  barOuter: { height: 12, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.14)', overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)' },
-  barInner: { height: 12, backgroundColor: 'rgba(120,170,255,0.85)' },
-  pct: { color: '#fff', marginTop: 10, textAlign: 'right', fontWeight: '900' },
+  root: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 9999,
+  },
+  bg: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#0a0f18',
+  },
+  previewWrap: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    right: 0,
+    bottom: 0,
+  },
+  canvas: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    right: 0,
+    bottom: 0,
+  },
+  overlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 42,
+    paddingHorizontal: 18,
+  },
+  title: {
+    color: '#ffffff',
+    fontSize: 22,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  sub: {
+    color: 'rgba(255,255,255,0.75)',
+    fontSize: 14,
+    marginBottom: 14,
+  },
+  barOuter: {
+    height: 10,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    overflow: 'hidden',
+  },
+  barInner: {
+    height: 10,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.9)',
+  },
+  pct: {
+    marginTop: 10,
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 14,
+    fontWeight: '600',
+  },
 });

@@ -1,4 +1,6 @@
-import React, { Suspense, useMemo, useRef } from 'react';
+import React, { Suspense, useEffect, useMemo, useRef } from 'react';
+import { useThree } from '@react-three/fiber';
+import { useTexture } from '@react-three/drei';
 import { StyleSheet, View } from 'react-native';
 import { Canvas, useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
@@ -7,6 +9,36 @@ function clamp(v: number, a: number, b: number) { return Math.max(a, Math.min(b,
 
 const ZOOM_MIN = 16;
 const ZOOM_MAX = 90;
+
+const SKYBOX_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/skybase_stage1_skybox.jpeg';
+
+function SkyboxAndFog() {
+  const { scene } = useThree();
+  const tex: any = useTexture(SKYBOX_URL);
+
+  useEffect(() => {
+    if (!tex) return;
+    try {
+      if ("colorSpace" in tex && (THREE as any).SRGBColorSpace) tex.colorSpace = (THREE as any).SRGBColorSpace;
+      else if ((THREE as any).sRGBEncoding) tex.encoding = (THREE as any).sRGBEncoding;
+    } catch {}
+
+    try { tex.mapping = (THREE as any).EquirectangularReflectionMapping; } catch {}
+
+    scene.background = tex;
+    scene.environment = tex;
+
+    return () => {
+      try {
+        if (scene.background === tex) scene.background = null as any;
+        if (scene.environment === tex) scene.environment = null as any;
+      } catch {}
+    };
+  }, [tex, scene]);
+
+  return null;
+}
+
 
 function Scene({
   targetY,
@@ -47,8 +79,10 @@ function Scene({
 
   return (
     <>
-      <ambientLight intensity={0.65} />
-      <directionalLight position={[12, 18, 8]} intensity={1.0} />
+      <ambientLight intensity={0.35} />
+      <hemisphereLight args={["#9fb7ff", "#06080f", 0.9]} />
+      <directionalLight position={[12, 18, 8]} intensity={1.15} />
+      <directionalLight position={[-10, 6, -14]} intensity={0.35} />
       <fog attach="fog" args={['#0a0f18', 20, 140]} />
 
       <mesh geometry={ground} material={matDark} position={[0, targetY - 0.5, 0]} />
@@ -173,7 +207,8 @@ export default function SkybaseWorld3D(props: { layer: number; layerHeight: numb
         camera={{ position: [0, 6, 18], fov: 60 }}
       >
         <Suspense fallback={null}>
-          <Scene targetY={targetY} yawRef={yawRef} pitchRef={pitchRef} radiusRef={radiusRef} />
+            <SkyboxAndFog />
+            <Scene targetY={targetY} yawRef={yawRef} pitchRef={pitchRef} radiusRef={radiusRef} />
         </Suspense>
       </Canvas>
     </View>

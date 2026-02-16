@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import "./src/threeMeshopt";
 import { AppState, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Canvas, useFrame } from '@react-three/fiber/native';
-import { NavigationContainer } from '@react-navigation/native';
+import { useNavigation, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -10,6 +11,14 @@ import GameHUD from './GameHUD';
 import FalloutLoaderOverlay from './FalloutLoaderOverlay';
 import SkybaseWorld3D from './SkybaseWorld3D';
 import WorldHUD from './WorldHUD';
+
+// __EXGL_LOG_FILTER__
+const __origLog = console.log.bind(console);
+console.log = (...args: any[]) => {
+  const msg = String(args?.[0] ?? '');
+  if (msg.includes("EXGL: gl.pixelStorei() doesn't support this parameter yet!")) return;
+  __origLog(...args);
+};
 
 type RootStackParamList = {
   Home: undefined;
@@ -223,7 +232,6 @@ function CombatWorld({ cfg }: { cfg: CombatConfig }) {
   const monuments = useStoredNumber(cfg.monumentsKey, 0);
 
   const [toast, setToast] = useState<string>('');
-    const [upOpen, setUpOpen] = useState(false);
     const [devOpen, setDevOpen] = useState(false);
   const [uiTick, setUiTick] = useState(0);
 
@@ -256,6 +264,7 @@ function CombatWorld({ cfg }: { cfg: CombatConfig }) {
   const [bossMaxHp, setBossMaxHp] = useState(500);
   const [bossHp, setBossHp] = useState(500);
 
+      const [upOpen, setUpOpen] = useState(false);
   function showToast(msg: string) {
     if (toastTimer.current) clearTimeout(toastTimer.current);
     setToast(msg);
@@ -754,6 +763,7 @@ function CombatWorld({ cfg }: { cfg: CombatConfig }) {
 }
 
   function FantasyScreen() {
+  const navigation = useNavigation<any>();
     const cfg: CombatConfig = {
       label: 'Fantasy Valley',
       currencyName: 'Mana',
@@ -790,6 +800,9 @@ function CombatWorld({ cfg }: { cfg: CombatConfig }) {
     const [walking, setWalking] = useState(false);
     const [shootPulse, setShootPulse] = useState(0);
 
+      const [upOpen, setUpOpen] = useState(false);
+      
+      
     const [podiumOpen, setPodiumOpen] = useState(false);
     const [podiumChoices, setPodiumChoices] = useState<PodiumChoice[]>([]);
 
@@ -797,7 +810,6 @@ function CombatWorld({ cfg }: { cfg: CombatConfig }) {
     const [bossOpen, setBossOpen] = useState(false);
     const [bossMaxHp, setBossMaxHp] = useState(500);
     const [bossHp, setBossHp] = useState(500);
-      const [upOpen, setUpOpen] = useState(false);
 
     const killsRef = useRef<number>(0);
     const podiumsRef = useRef<number>(0);
@@ -925,8 +937,7 @@ function CombatWorld({ cfg }: { cfg: CombatConfig }) {
     const costAutoAtk = autoAtkUnlocked.value ? 0 : 150;
 
     function fantasyUpgradesBody() {
-  const [upOpen, setUpOpen] = useState(false);
-      const rows = [
+        const rows = [
         { k: 'tap', name: 'Tap Power', lvl: tapLvl.value, cost: costTap },
         { k: 'kill', name: 'Kill Bonus', lvl: killLvl.value, cost: costKill },
         { k: 'auto', name: 'Auto Gain', lvl: autoLvl.value, cost: costAuto },
@@ -997,7 +1008,8 @@ function CombatWorld({ cfg }: { cfg: CombatConfig }) {
               <Text style={{ color: '#fff', fontSize: 18, fontWeight: '900' }}>👹 Monument Boss</Text>
               <Text style={{ color: '#cfcfcf', marginTop: 6, marginBottom: 12 }}>Auto-attacks will chip this down</Text>
 
-              <View style={{ height: 12, backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 999, overflow: 'hidden', marginTop: 10 }}>
+              <View style={{ height: 12, backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 999,
+                    transform: [{ translateX: 0 }, { translateY: 0 }], overflow: 'hidden', marginTop: 10 }}>
                 <View style={{ height: 12, backgroundColor: 'rgba(255,0,0,0.6)', width: `${Math.max(0, Math.min(100, (bossHp / bossMaxHp) * 100))}%` }} />
               </View>
               <Text style={{ color: '#fff', marginTop: 8, fontWeight: '800' }}>{formatInt(bossHp)} / {formatInt(bossMaxHp)} ❤️</Text>
@@ -1023,23 +1035,85 @@ function CombatWorld({ cfg }: { cfg: CombatConfig }) {
             onEnemyKilled={(k: 'enemy' | 'boss') => onEnemyKilled(k)}
           />
 
-          <View style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 }} pointerEvents="box-none">
-          <GameHUD
-              title={'Fantasy Valley'}
-              leftSub={`Mana ${formatInt(currency.value)} • +${autoPerSec.toFixed(2)}/s`}
-              rightLines={[`DPS ${dps.toFixed(1)}`, `Tier ${tier.value} • Mon ${monuments.value}`, `${killsRef.current} K • ${podiumsRef.current} P`]}
-              buttons={[
-                { kind: 'hold', label: 'Hold to Walk', activeLabel: 'Walking…', active: walking, onHoldStart: () => setWalking(true), onHoldEnd: () => setWalking(false) },
-                { kind: 'press', label: 'Shoot', onPress: () => setShootPulse((n) => n + 1) },
-                { kind: 'press', label: `Tap +${tapGain}`, onPress: () => currency.add(tapGain) },
-              ]}
-              onOpenUpgrades={() => setUpOpen(true)}
-              toast={toast}
-              upgradesOpen={upOpen}
-              onCloseUpgrades={() => setUpOpen(false)}
-              upgradesTitle={'Fantasy Upgrades'}
-              upgradesBody={fantasyUpgradesBody()}
-            />
+          <View style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 }} pointerEvents="box-none"><GameHUD
+                title={''}
+                leftSub={`Mana ${formatInt(currency.value)} • +${autoPerSec.toFixed(2)}/s`}
+                rightLines={[`DPS ${dps.toFixed(1)}`, `Tier ${tier.value} • Mon ${monuments.value}`, `${killsRef.current} K • ${podiumsRef.current} P`]}
+                navButtons={[
+                  { label: 'Hub', onPress: () => navigation.replace('Hub') },
+                  { label: 'Skybase', onPress: () => navigation.replace('Skybase') },
+                ]}
+                toast={toast}
+                upgradesOpen={upOpen}
+                onCloseUpgrades={() => setUpOpen(false)}
+                upgradesTitle={'Fantasy Upgrades'}
+                upgradesBody={fantasyUpgradesBody()}
+/>
+            
+              {/* TOP Upgrades (under Mana) */}
+              <View style={{ position: 'absolute', left: 18, top: 118 }} pointerEvents="box-none">
+                <Pressable
+                  onPress={() => setUpOpen(true)}
+                  style={({ pressed }) => [
+                    {
+                      paddingVertical: 12,
+                      paddingHorizontal: 16,
+                      borderRadius: 16,
+                      backgroundColor: pressed ? 'rgba(91,124,255,0.34)' : 'rgba(91,124,255,0.28)',
+                      borderWidth: 1,
+                      borderColor: 'rgba(91,124,255,0.70)',
+                      minWidth: 128,
+                      alignItems: 'center',
+                    },
+                  ]}
+                >
+                  <Text style={{ color: '#FFFFFF', fontWeight: '900', fontSize: 13, letterSpacing: 0.4 }}>Upgrades</Text>
+                </Pressable>
+              </View>
+
+{/* BOTTOM ACTION LAYER */}
+            <View style={{ position: 'absolute', left: 0, right: 0, bottom: 18 }} pointerEvents="box-none">                {/* Joystick darker backing */}
+                <View
+                  style={{
+                    position: 'absolute',
+                    left: 18,
+                    bottom: 0,
+                    width: 170,
+                    height: 170,
+                    borderRadius: 999,
+                    transform: [{ translateX: 0 }, { translateY: 0 }],
+                    backgroundColor: 'rgba(0,0,0,0.38)',
+                    borderWidth: 1,
+                    borderColor: 'rgba(255,255,255,0.14)',
+                  }}
+                  pointerEvents="none"
+                />              {/* Shoot BIG right (also gives +mana until upgraded: uses tapGain) */}
+              <View style={{ position: 'absolute', right: 18, bottom: 0 }} pointerEvents="box-none">
+                <Pressable
+                  onPress={() => {
+                    setShootPulse((n) => n + 1);
+                    currency.add(tapGain);
+                  }}
+                  style={({ pressed }) => [
+                    {
+                      width: 170,
+                      height: 64,
+                      borderRadius: 22,
+                      backgroundColor: pressed ? 'rgba(255, 170, 80, 0.34)' : 'rgba(255, 170, 80, 0.26)',
+                      borderWidth: 1,
+                      borderColor: pressed ? 'rgba(255, 170, 80, 0.80)' : 'rgba(255, 170, 80, 0.62)',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    },
+                  ]}
+                >
+                  <Text style={{ color: '#FFFFFF', fontWeight: '900', fontSize: 14, letterSpacing: 0.5 }}>
+                    Shoot +{tapGain}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+
           </View>
           </View>
         </SafeAreaView>
@@ -1056,55 +1130,189 @@ function LoadingFantasyScreen({ navigation }: any) {
   return (
     <View style={{ flex: 1, backgroundColor: '#0a0f18' }}>
       <FalloutLoaderOverlay
-        lootUrl={GAZEBO_URL}
-        preloadUrls={[MOUNTAIN_URL, GAZEBO_URL, 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/forest_tree.glb', 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/skybox1.jpg']}
+        lootUrl={MOUNTAIN_URL}
+        preloadUrls={[MOUNTAIN_URL, 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/forest_tree.glb', 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/skybox1.jpg']}
         onDone={() => navigation.replace('Fantasy')}
-        title={'Loading Fantasy Valley…'}
-        subtitle={'Drag to rotate loot'}
+        title={''}
       />
     </View>
   );
 }
+  function SkybaseScreen({ navigation }: any) {
+    const energy = useStoredNumber(K.energy, 0);
+    const tapLvl = useStoredNumber(K.energyTapLvl, 0);
+    const killLvl = useStoredNumber(K.energyKillLvl, 0);
+    const autoLvl = useStoredNumber(K.energyAutoLvl, 0);
 
-function SkybaseScreen({ navigation }: any) {
-  const energy = useStoredNumber(K.energy, 0);
-  const [upOpen, setUpOpen] = useState(false);
+    const dmgLvl = useStoredNumber(K.sDmgLvl, 0);
+    const rateLvl = useStoredNumber(K.sRateLvl, 0);
+    const autoAtkUnlocked = useStoredNumber(K.sAutoAtkUnlocked, 0);
 
-  return (
-    <SafeAreaView style={styles.safe}>
-      <View style={{ flex: 1, width: '100%', height: '100%', alignSelf: 'stretch' }}>
-        <SkybaseWorld3D layer={1} layerHeight={0} />
+    const reactorLvl = useStoredNumber(K.sL1ReactorLvl, 0);
+    const turretLvl = useStoredNumber(K.sL1TurretLvl, 0);
+    const shieldLvl = useStoredNumber(K.sL1ShieldLvl, 0);
+    const droneLvl = useStoredNumber(K.sL1DroneLvl, 0);
 
-        <View style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 }} pointerEvents="box-none">
-        <GameHUD
-            title={'Skybase'}
-            leftSub={`Energy ${formatInt(energy.value)}`}
-            rightLines={[]}
-              navButtons={[{ label: 'Hub', onPress: () => navigation.navigate('Hub') }, { label: 'Fantasy', onPress: () => navigation.navigate('Fantasy') }]}
-            buttons={[
-              { kind: 'press', label: 'Tap +1', onPress: () => energy.add(1) },
-            ]}
-            onOpenUpgrades={() => setUpOpen(true)}
-            upgradesOpen={upOpen}
-            onCloseUpgrades={() => setUpOpen(false)}
-            upgradesTitle={'Skybase Upgrades'}
-            upgradesBody={(
-              <View>
-                <Text style={{ color: '#B8C0D6', fontSize: 12, lineHeight: 18 }}>Coming next: sci-fi upgrade tree mirroring Fantasy (tap, auto, damage, rate, unlocks).</Text>
-              </View>
-            )}
-          />
+    const boostF2S = useStoredNumber(K.boostFantasyToSky, 0);
+    const boostS2F = useStoredNumber(K.boostSkyToFantasy, 0);
+
+    const tier = useStoredNumber(K.skyTier, 0);
+    const monuments = useStoredNumber(K.skyMonuments, 0);
+
+    const [upOpen, setUpOpen] = useState(false);
+
+    const localAutoPerSec = autoLvl.value * 0.5 + reactorLvl.value * 0.75 + droneLvl.value * 0.35;
+    const crossBoost = boostF2S.value;
+    const autoPerSec = localAutoPerSec + crossBoost * 0.25;
+
+    const tapGain = Math.max(1, Math.floor(1 + tapLvl.value * 2 + reactorLvl.value * 1));
+    const killGain = Math.max(3, Math.floor(8 + killLvl.value * 3 + droneLvl.value * 2));
+
+    const damage = 1 + dmgLvl.value * 1 + turretLvl.value * 2;
+    const attacksPerSec = 1 + rateLvl.value * 0.15 + turretLvl.value * 0.10;
+    const dps = damage * attacksPerSec;
+
+    const hp = 120 + tier.value * 15 + shieldLvl.value * 30;
+
+    const costTap = powCost(20, 1.18, tapLvl.value);
+    const costKill = powCost(35, 1.20, killLvl.value);
+    const costAuto = powCost(60, 1.22, autoLvl.value);
+    const costDmg = powCost(40, 1.23, dmgLvl.value);
+    const costRate = powCost(45, 1.25, rateLvl.value);
+    const costAutoAtk = autoAtkUnlocked.value ? 0 : 150;
+
+    const costReactor = powCost(80, 1.24, reactorLvl.value);
+    const costTurret = powCost(90, 1.26, turretLvl.value);
+    const costShield = powCost(95, 1.28, shieldLvl.value);
+    const costDrone = powCost(85, 1.25, droneLvl.value);
+
+    async function buy(kind: 'tap'|'kill'|'auto'|'dmg'|'rate'|'autoatk'|'reactor'|'turret'|'shield'|'drone') {
+      if (kind === 'tap' && energy.value >= costTap) { await energy.add(-costTap); await tapLvl.set(tapLvl.value + 1); return; }
+      if (kind === 'kill' && energy.value >= costKill) { await energy.add(-costKill); await killLvl.set(killLvl.value + 1); return; }
+      if (kind === 'auto' && energy.value >= costAuto) { await energy.add(-costAuto); await autoLvl.set(autoLvl.value + 1); return; }
+      if (kind === 'dmg' && energy.value >= costDmg) { await energy.add(-costDmg); await dmgLvl.set(dmgLvl.value + 1); return; }
+      if (kind === 'rate' && energy.value >= costRate) { await energy.add(-costRate); await rateLvl.set(rateLvl.value + 1); return; }
+      if (kind === 'autoatk' && !autoAtkUnlocked.value && energy.value >= costAutoAtk) { await energy.add(-costAutoAtk); await autoAtkUnlocked.set(1); return; }
+
+      if (kind === 'reactor' && energy.value >= costReactor) { await energy.add(-costReactor); await reactorLvl.set(reactorLvl.value + 1); return; }
+      if (kind === 'turret' && energy.value >= costTurret) { await energy.add(-costTurret); await turretLvl.set(turretLvl.value + 1); return; }
+      if (kind === 'shield' && energy.value >= costShield) { await energy.add(-costShield); await shieldLvl.set(shieldLvl.value + 1); return; }
+      if (kind === 'drone' && energy.value >= costDrone) { await energy.add(-costDrone); await droneLvl.set(droneLvl.value + 1); return; }
+    }
+
+    function skyUpgradesBody() {
+      const rows = [
+        { k: 'tap' as const, name: 'Tap Power', lvl: tapLvl.value, cost: costTap, meta: `Tap +${tapGain} Energy` },
+        { k: 'kill' as const, name: 'Kill Bonus', lvl: killLvl.value, cost: costKill, meta: `Kill +${killGain} Energy` },
+        { k: 'auto' as const, name: 'Auto Gain', lvl: autoLvl.value, cost: costAuto, meta: `+${localAutoPerSec.toFixed(2)}/s local` },
+        { k: 'dmg' as const, name: 'Damage', lvl: dmgLvl.value, cost: costDmg, meta: `DPS +${damage.toFixed(1)}` },
+        { k: 'rate' as const, name: 'Fire Rate', lvl: rateLvl.value, cost: costRate, meta: `${attacksPerSec.toFixed(2)}/s` },
+      ];
+
+      const sys = [
+        { k: 'reactor' as const, name: 'Reactor', lvl: reactorLvl.value, cost: costReactor, meta: `+${(reactorLvl.value*0.75).toFixed(2)}/s • +${reactorLvl.value} tap` },
+        { k: 'turret' as const, name: 'Turrets', lvl: turretLvl.value, cost: costTurret, meta: `+${(turretLvl.value*2).toFixed(0)} dmg • +${(turretLvl.value*0.10).toFixed(2)}/s` },
+        { k: 'shield' as const, name: 'Shield', lvl: shieldLvl.value, cost: costShield, meta: `HP ${hp}` },
+        { k: 'drone' as const, name: 'Drones', lvl: droneLvl.value, cost: costDrone, meta: `+${(droneLvl.value*0.35).toFixed(2)}/s • +${droneLvl.value*2} kill` },
+      ];
+
+      return (
+        <View>
+          <View style={{ padding: 12, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)', marginBottom: 12 }}>
+            <Text style={{ color: '#FFFFFF', fontWeight: '900', fontSize: 13 }}>Cross-World Effects</Text>
+            <Text style={{ color: '#B8C0D6', marginTop: 6, fontSize: 12, lineHeight: 18 }}>
+              Fantasy → Skybase: +{(boostF2S.value * 0.25).toFixed(2)}/s (Monuments: {boostF2S.value})
+            </Text>
+            <Text style={{ color: '#B8C0D6', marginTop: 2, fontSize: 12, lineHeight: 18 }}>
+              Skybase → Fantasy: +{(boostS2F.value * 0.25).toFixed(2)}/s (Monuments: {boostS2F.value})
+            </Text>
+          </View>
+
+          <Text style={{ color: '#D7E1FF', fontWeight: '900', marginBottom: 8 }}>Core Upgrades</Text>
+          {rows.map((r, ix) => (
+            <Pressable
+              key={ix}
+              style={{ borderRadius: 14, padding: 12, backgroundColor: '#1A2540', borderWidth: 1, borderColor: '#25365F', marginBottom: 10 }}
+              onPress={() => buy(r.k)}
+            >
+              <Text style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '900' }}>{r.name}  Lv {r.lvl}</Text>
+              <Text style={{ color: '#B8C0D6', fontSize: 12, marginTop: 4 }}>{r.meta}</Text>
+              <Text style={{ color: '#B8C0D6', fontSize: 12, marginTop: 4 }}>Cost: {formatInt(r.cost)}</Text>
+            </Pressable>
+          ))}
+
+          <Pressable
+            style={{ borderRadius: 14, padding: 12, backgroundColor: '#1A2540', borderWidth: 1, borderColor: '#25365F', marginBottom: 14 }}
+            onPress={() => buy('autoatk')}
+          >
+            <Text style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '900' }}>{autoAtkUnlocked.value ? 'Auto-Attack: Unlocked' : 'Auto-Attack: Unlock'}</Text>
+            <Text style={{ color: '#B8C0D6', fontSize: 12, marginTop: 4 }}>{autoAtkUnlocked.value ? 'Enabled for Sky combat (next)' : `Cost: ${formatInt(costAutoAtk)}`}</Text>
+          </Pressable>
+
+          <Text style={{ color: '#D7E1FF', fontWeight: '900', marginBottom: 8 }}>Skybase Systems</Text>
+          {sys.map((r, ix) => (
+            <Pressable
+              key={ix}
+              style={{ borderRadius: 14, padding: 12, backgroundColor: '#101A2D', borderWidth: 1, borderColor: 'rgba(91,124,255,0.28)', marginBottom: 10 }}
+              onPress={() => buy(r.k)}
+            >
+              <Text style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '900' }}>{r.name}  Lv {r.lvl}</Text>
+              <Text style={{ color: '#B8C0D6', fontSize: 12, marginTop: 4 }}>{r.meta}</Text>
+              <Text style={{ color: '#B8C0D6', fontSize: 12, marginTop: 4 }}>Cost: {formatInt(r.cost)}</Text>
+            </Pressable>
+          ))}
+
+          <View style={{ padding: 12, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)', marginTop: 4 }}>
+            <Text style={{ color: '#B8C0D6', fontSize: 12, lineHeight: 18 }}>
+              Tip: clear Monuments in either world to permanently boost the other world’s auto income.
+            </Text>
+          </View>
         </View>
+      );
+    }
+
+    useEffect(() => {
+      const id = setInterval(() => {
+        if (autoPerSec > 0) energy.add(autoPerSec);
+      }, 1000);
+      return () => clearInterval(id);
+    }, [autoPerSec]);
+
+    return (
+      <SafeAreaView style={styles.safe}>
+        <View style={{ flex: 1, width: '100%', height: '100%', alignSelf: 'stretch' }}>
+          <SkybaseWorld3D layer={1} layerHeight={0} />
+
+          <View style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 }} pointerEvents="box-none">
+            <GameHUD
+              title={'Skybase'}
+              leftSub={`Energy ${formatInt(energy.value)} • HP ${hp} • +${autoPerSec.toFixed(2)}/s`}
+              rightLines={[`DPS ${dps.toFixed(1)}`, `Tier ${tier.value} • Mon ${monuments.value}`, `F→S +${(boostF2S.value * 0.25).toFixed(2)}/s`]}
+    navButtons={[
+      { label: 'Fantasy', onPress: () => navigation.replace('Fantasy') },
+      { label: 'Hub', onPress: () => navigation.replace('Hub') },
+    ]}
+              onOpenUpgrades={() => setUpOpen(true)}
+              upgradesOpen={upOpen}
+              onCloseUpgrades={() => setUpOpen(false)}
+              upgradesTitle={'Skybase Upgrades'}
+              upgradesBody={skyUpgradesBody()}
+            />
+          </View>
         </View>
       </SafeAreaView>
-  );
-}
+    );
+  }
+
+
 
 function HubScreen() {
   return <ScreenStub title="Nexus Hub" body="Next: vendors + inventory stubs." />;
 }
 
 function SettingsScreen() {
+  const navigation = useNavigation<any>();
+
   return <ScreenStub title="Settings" body="Next: offline cap upgrades + performance toggles." />;
 }
 

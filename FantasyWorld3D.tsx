@@ -1,10 +1,13 @@
 import React, {useEffect, useMemo, useRef, useState, Suspense, useCallback} from 'react';
 import { MeshBVH, acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from "three-mesh-bvh";
 import { View, StyleSheet, useWindowDimensions} from 'react-native';
-import { Canvas, useFrame, useThree } from '@react-three/fiber/native';
+import { Canvas, useFrame, useThree, useLoader } from '@react-three/fiber/native';
 import { useGLTF, useProgress, Clone, useAnimations, useTexture } from '@react-three/drei/native';
+import { MeshoptDecoder } from 'three-stdlib';
 import * as THREE from 'three';
 import { SkeletonUtils } from 'three-stdlib';
+
+
 type FantasyWorld3DProps = {
   shootPulse: number;
   bulletDmgEnemy: number;
@@ -28,7 +31,7 @@ type Projectile = { id: string; pos: THREE.Vector3; vel: THREE.Vector3; ttl: num
 const CHUNK_LEN = 40;
 const PODIUM_TOP_Y = 2.00;
 
-const GAZEBO_LIFT = 4.0;
+const GAZEBO_LIFT = 12.0;
 const STAND_H = 1.15;
 const GAZEBO_BASE_Y = GAZEBO_LIFT + 0.35;
 const GAZEBO_PLATFORM_Y = GAZEBO_BASE_Y + 2.60;
@@ -67,44 +70,39 @@ const MONSTER1_RUN_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/ob
 const MONSTER1_ATTACK_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/monster1/monster1_attack_v1.glb';
 
 const MONSTER1_MODEL_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/monster1/monster1_model.glb';
-useGLTF.preload(MOUNTAIN_URL);
-useGLTF.preload(GAZEBO_URL);
-useGLTF.preload(PATH_GLB_URL);
-useGLTF.preload(PODIUM_URL);
+useGLTF.preload(MOUNTAIN_URL as any);
+useGLTF.preload(PATH_GLB_URL as any);
+useGLTF.preload(PODIUM_URL as any);
+useGLTF.preload(FOREST_TREE_URL as any);
+useGLTF.preload(MONSTER1_MODEL_URL as any);
+useGLTF.preload(MONSTER1_WALK_URL as any);
+useGLTF.preload(MONSTER1_RUN_URL as any);
+useGLTF.preload(MONSTER1_ATTACK_URL as any);
+useGLTF.preload(GAZEBO_URL as any, undefined as any, true as any, (loader: any) => { try { loader.setMeshoptDecoder?.(MeshoptDecoder as any); } catch {} });
 
-useGLTF.preload(MONSTER1_MODEL_URL);
-useGLTF.preload(MONSTER1_WALK_URL);
-useGLTF.preload(MONSTER1_RUN_URL);
-useGLTF.preload(MONSTER1_ATTACK_URL);
-useGLTF.preload(FOREST_TREE_URL);
-const FOREST_FOREST_TREE_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/forest_tree.glb';
-useGLTF.preload(FOREST_FOREST_TREE_URL);
 
 function MountainGLB(props: { position: [number, number, number]; scale?: number | [number, number, number]; rotationY?: number }) {
-  const { scene } = useGLTF(MOUNTAIN_URL);
+  const { scene } = (useGLTF as any)(MOUNTAIN_URL as any);
 
   const obj = useMemo<THREE.Object3D>(() => {
     const clone = scene.clone(true);
-    clone.traverse((m: any) => {
-      if (!m?.isMesh || !m.geometry) return;
-      const g: any = m.geometry;
-      if (!g.boundsTree) {
-        g.boundsTree = new MeshBVH(g);
-      }
-    });
+    try {
+      clone.traverse((m: any) => {
+        if (!m?.isMesh || !m.geometry) return;
+        const g: any = m.geometry;
+        if (!g.boundsTree) g.boundsTree = new MeshBVH(g);
+      });
+    } catch {}
     return clone;
   }, [scene]);
 
   return (
-      <group
-        position={props.position}
-        rotation={[0, props.rotationY ?? 0, 0]}
-        scale={props.scale ?? 1}
-      >
-        <primitive object={obj} position={[0, 0, 0]} />
-      </group>
-    );
+    <group position={props.position} rotation={[0, props.rotationY ?? 0, 0]} scale={props.scale ?? 0.5}>
+      <primitive object={obj} position={[0, 0, 0]} />
+    </group>
+  );
 }
+
   function SkyboxAndFog() {
     const { scene } = useThree();
     const tex: any = useTexture(SKYBOX_URL);
@@ -136,12 +134,20 @@ function MountainGLB(props: { position: [number, number, number]; scale?: number
 
 
 function GazeboGLB(props: { position: [number, number, number]; scale?: number; rotationY?: number }) {
-  const gltf: any = useGLTF(GAZEBO_URL as any);
-  const scene: any = Array.isArray(gltf) ? gltf[0]?.scene : gltf?.scene;
+  const gltf: any = (useGLTF as any)(
+    GAZEBO_URL as any,
+    undefined as any,
+    true as any,
+    (loader: any) => {
+      try { loader.setMeshoptDecoder?.(MeshoptDecoder as any); } catch {}
+    }
+  );
 
-  const obj = useMemo(() => {
+  const scene: any = gltf?.scene;
+
+  const obj = useMemo<THREE.Object3D | null>(() => {
+    if (!scene) return null;
     const c: any = scene.clone(true);
-    // build BVH for gazebo meshes
     try {
       c.traverse((m: any) => {
         if (!m?.isMesh || !m.geometry) return;
@@ -149,28 +155,20 @@ function GazeboGLB(props: { position: [number, number, number]; scale?: number; 
         if (!g.boundsTree) g.boundsTree = new MeshBVH(g);
       });
     } catch {}
-    try {
-      const box = new THREE.Box3().setFromObject(c);
-      const minY = box?.min?.y;
-if (typeof minY === 'number' && isFinite(minY) && Math.abs(minY) > 1e-5) {
-        // lift so the lowest vertex sits on y=0
-        c.position.y -= minY;
-      }
-    } catch {}
-    return c;
+    return c as THREE.Object3D;
   }, [scene]);
+
+  if (!obj) return null;
+
   return (
-    <primitive
-      object={obj}
-      position={props.position}
-      scale={props.scale ?? 1}
-      rotation={[0, props.rotationY ?? 0, 0]}
-    />
+    <group position={props.position} rotation={[0, props.rotationY ?? 0, 0]} scale={props.scale ?? 0.5}>
+      <primitive object={obj} />
+    </group>
   );
 }
 
 function PodiumGLB(props: { position: [number, number, number]; scale?: number | [number, number, number]; rotationY?: number }) {
-  const { scene } = useGLTF(PODIUM_URL);
+  const { scene } = (useGLTF as any)(PODIUM_URL as any);
 
   return (
     <group position={props.position} scale={props.scale || 1.0} rotation={[0, props.rotationY || 0, 0]}>
@@ -185,7 +183,7 @@ function PodiumGLB(props: { position: [number, number, number]; scale?: number |
     targetW?: number; // desired X size in world units
     targetL?: number; // desired Z size in world units
   }) {
-    const { scene } = useGLTF(PATH_GLB_URL);
+    const { scene } = (useGLTF as any)(PATH_GLB_URL as any);
 
     const memo = useMemo(() => {
       const clone: any = scene.clone(true);
@@ -229,7 +227,7 @@ function PodiumGLB(props: { position: [number, number, number]; scale?: number |
 
 
 function ForestTreeGLB(props: { position: [number, number, number]; scale?: number; rotationY?: number }) {
-  const { scene } = useGLTF(FOREST_FOREST_TREE_URL);
+  const { scene } = (useGLTF as any)(FOREST_TREE_URL as any);
 
   const memo = useMemo(() => {
     const c: any = scene.clone(true);
@@ -416,9 +414,9 @@ function resolveSphereMeshBVH(
   function Monster1GLB(props: { position: [number, number, number]; scale?: number; rotationY?: number; anim: EnemyAnim }) {
   const ref = useRef<THREE.Group>(null);
 
-  const walkG: any = useGLTF(MONSTER1_WALK_URL as any);
-  const runG: any = useGLTF(MONSTER1_RUN_URL as any);
-  const atkG: any = useGLTF(MONSTER1_ATTACK_URL as any);
+  const walkG: any = (useGLTF as any)(MONSTER1_WALK_URL as any);
+  const runG: any = (useGLTF as any)(MONSTER1_RUN_URL as any);
+  const atkG: any = (useGLTF as any)(MONSTER1_ATTACK_URL as any);
 
   const baseScene: any =
     (walkG && walkG.scene) ? walkG.scene :
@@ -498,7 +496,7 @@ function resolveSphereMeshBVH(
   if (!obj) return null;
 
   return (
-    <group ref={ref} position={props.position} rotation={[0, props.rotationY ?? 0, 0]} scale={props.scale ?? 1}>
+    <group ref={ref} position={props.position} rotation={[0, props.rotationY ?? 0, 0]} scale={props.scale ?? 0.5}>
       <primitive object={obj} />
     </group>
   );
@@ -651,7 +649,7 @@ return (
         {(idx === 0 && !!props.showGazebo) ? (
             SHOW_GAZEBO_MESH ? (
               <group ref={gazeboRef}>
-                <GazeboGLB position={[0, GAZEBO_LIFT + 0.35, 0]} scale={12.0} rotationY={Math.PI} />
+                <GazeboGLB position={[0, GAZEBO_LIFT + 0.35, 0]} scale={0.5} rotationY={Math.PI} />
               </group>
             ) : (
               <group>
@@ -719,7 +717,8 @@ const onMountains = useCallback((idx: number, roots: any[]) => {
       for (const arr of treeChunkMapRef.current.values()) flat.push(...arr);
       treeBoxesRef.current = flat;
     }, []);
-    const showGazebo = Math.abs(playerPosRef.current.z) < 90;
+    const showGazebo = false;
+
   const STAND_Y = 1.15; // authoritative player standing height
     const GAZEBO_HALF = 9.0;
     const simAcc = useRef(0);
@@ -733,6 +732,8 @@ const lastMountainCountRef = useRef(-1);
 
   const [projectiles, setProjectiles] = useState<Projectile[]>([]);
   const projRef = useRef<Projectile[]>([]);
+
+  const staffRef = useRef<THREE.Group | null>(null);
   projRef.current = projectiles;
 
   const [enemies, setEnemies] = useState<Enemy[]>(() => [makeEnemy('enemy', -12)]);
@@ -1063,6 +1064,8 @@ spawnT.current += stepDt;
         const nextProjectiles: Projectile[] = [];
         let enemiesChanged = false;
 
+
+        const spawnKinds: EnemyKind[] = [];
         for (const pr of projRef.current) {
           const ppos = pr.pos.clone().add(pr.vel.clone().multiplyScalar(stepDt));
           const ttl = pr.ttl - stepDt;
@@ -1078,17 +1081,21 @@ spawnT.current += stepDt;
               const dmg = (e.kind === 'boss') ? props.bulletDmgBoss : props.bulletDmgEnemy;
               const nhp = Math.max(0, e.hp - dmg);
               if (nhp !== e.hp) enemiesChanged = true;
-              if (e.hp > 0 && nhp === 0) props.onEnemyKilled(e.kind);
+              if (e.hp > 0 && nhp === 0) {
+                props.onEnemyKilled(e.kind);
+                spawnKinds.push(e.kind);
+              }
               currentEnemies[i] = { ...e, hp: nhp };
               break;
             }
           }
           if (!hit) nextProjectiles.push({ ...pr, pos: ppos, ttl });
+        }        if (enemiesChanged || spawnKinds.length) {
+          const spawns = spawnKinds.map((k) => makeEnemy(k, p.z - rand(22, 40)));
+          const kept = currentEnemies.filter((x) => x && x.hp > 0 && x.pos.z < p.z + 18 && x.pos.z > p.z - 900);
+          setEnemies(kept.concat(spawns));
         }
-
-        if (enemiesChanged) setEnemies(currentEnemies);
         if (nextProjectiles.length !== projRef.current.length) setProjectiles(nextProjectiles);
-
         const base = Math.floor((-p.z) / CHUNK_LEN);
         if (base !== baseChunkRef.current) {
           baseChunkRef.current = base;
@@ -1103,6 +1110,20 @@ spawnT.current += stepDt;
         const pitch = props.pitchRef.current;
       camera.position.set(p.x, 1.55, p.z);
       camera.quaternion.setFromEuler(new THREE.Euler(pitch, yaw, 0, 'YXZ'));
+
+      if (staffRef.current) {
+        const off = new THREE.Vector3(0.32, -0.22, -0.72);
+        off.applyQuaternion(camera.quaternion);
+        staffRef.current.position.set(
+          camera.position.x + off.x,
+          camera.position.y + off.y,
+          camera.position.z + off.z,
+        );
+        const q = camera.quaternion.clone();
+        const tilt = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.15, 0.0, 0.25));
+        q.multiply(tilt);
+        staffRef.current.quaternion.copy(q);
+      }
     } catch (e) {
       console.error(e);
     }
