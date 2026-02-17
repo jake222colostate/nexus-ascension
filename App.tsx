@@ -5,16 +5,20 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import './src/loading/meshoptSetup';
 import FantasyWorld3D from './FantasyWorld3D';
 import GameHUD from './GameHUD';
 import FalloutLoaderOverlay from './FalloutLoaderOverlay';
 import SkybaseWorld3D from './SkybaseWorld3D';
 import WorldHUD from './WorldHUD';
+import { WORLD_ENTRY_ASSETS } from './src/assets/assetManifest';
+import { isWorldReady, markWorldReady } from './src/loading/worldLoadState';
 
 type RootStackParamList = {
   Home: undefined;
   Fantasy: undefined;
   LoadingFantasy: undefined;
+  LoadingSkybase: undefined;
   Skybase: undefined;
   Hub: undefined;
   Settings: undefined;
@@ -113,12 +117,12 @@ function HomeScreen({ navigation }: any) {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Quick Start</Text>
 
-          <Pressable style={styles.buttonPrimary} onPress={() => navigation.navigate('LoadingFantasy')}>
+          <Pressable style={styles.buttonPrimary} onPress={() => navigation.navigate(isWorldReady('fantasy') ? 'Fantasy' : 'LoadingFantasy')}>
             <Text style={styles.buttonPrimaryText}>Play (Fantasy Valley)</Text>
           </Pressable>
 
           <View style={styles.row}>
-            <Pressable style={styles.button} onPress={() => navigation.navigate('Skybase')}>
+            <Pressable style={styles.button} onPress={() => navigation.navigate(isWorldReady('skybase') ? 'Skybase' : 'LoadingSkybase')}>
               <Text style={styles.buttonText}>Skybase</Text>
             </Pressable>
 
@@ -1050,17 +1054,32 @@ function CombatWorld({ cfg }: { cfg: CombatConfig }) {
 
 
 function LoadingFantasyScreen({ navigation }: any) {
-  const MOUNTAIN_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/mountain_v2.glb';
-  const GAZEBO_URL = '';
-
   return (
     <View style={{ flex: 1, backgroundColor: '#0a0f18' }}>
       <FalloutLoaderOverlay
-        lootUrl={GAZEBO_URL}
-        preloadUrls={[MOUNTAIN_URL, GAZEBO_URL, 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/forest_tree.glb', 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/skybox1.jpg']}
-        onDone={() => navigation.replace('Fantasy')}
+        assets={WORLD_ENTRY_ASSETS.fantasy}
+        onDone={() => {
+          markWorldReady('fantasy');
+          navigation.replace('Fantasy');
+        }}
         title={'Loading Fantasy Valley…'}
-        subtitle={'Drag to rotate loot'}
+        subtitle={'Preparing biomes, enemies and collision mesh…'}
+      />
+    </View>
+  );
+}
+
+function LoadingSkybaseScreen({ navigation }: any) {
+  return (
+    <View style={{ flex: 1, backgroundColor: '#0a0f18' }}>
+      <FalloutLoaderOverlay
+        assets={WORLD_ENTRY_ASSETS.skybase}
+        onDone={() => {
+          markWorldReady('skybase');
+          navigation.replace('Skybase');
+        }}
+        title={'Loading Skybase…'}
+        subtitle={'Energizing reactor decks and atmosphere…'}
       />
     </View>
   );
@@ -1080,7 +1099,7 @@ function SkybaseScreen({ navigation }: any) {
             title={'Skybase'}
             leftSub={`Energy ${formatInt(energy.value)}`}
             rightLines={[]}
-              navButtons={[{ label: 'Hub', onPress: () => navigation.navigate('Hub') }, { label: 'Fantasy', onPress: () => navigation.navigate('Fantasy') }]}
+              navButtons={[{ label: 'Hub', onPress: () => navigation.navigate('Hub') }, { label: 'Fantasy', onPress: () => navigation.navigate(isWorldReady('fantasy') ? 'Fantasy' : 'LoadingFantasy') }]}
             buttons={[
               { kind: 'press', label: 'Tap +1', onPress: () => energy.add(1) },
             ]}
@@ -1131,6 +1150,7 @@ export default function App() {
       >
         <Stack.Screen name="Home" component={HomeScreen} options={{ title: 'Nexus Ascension' }} />
         <Stack.Screen name='LoadingFantasy' component={LoadingFantasyScreen} options={{ headerShown: false }} />
+        <Stack.Screen name='LoadingSkybase' component={LoadingSkybaseScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Fantasy" component={FantasyScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Skybase" component={SkybaseScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Hub" component={HubScreen} options={{ title: 'Hub' }} />

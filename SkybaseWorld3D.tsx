@@ -1,8 +1,8 @@
 import React, { Suspense, useEffect, useMemo, useRef } from 'react';
-import { useThree } from "@react-three/fiber";
-import { useTexture } from "@react-three/drei";
+import { useThree } from '@react-three/fiber/native';
+import { useTexture } from '@react-three/drei/native';
 import { StyleSheet, View } from 'react-native';
-import { Canvas, useFrame } from '@react-three/fiber';
+import { Canvas, useFrame } from '@react-three/fiber/native';
 import * as THREE from 'three';
 
 function clamp(v: number, a: number, b: number) { return Math.max(a, Math.min(b, v)); }
@@ -200,7 +200,6 @@ export default function SkybaseWorld3D(props: { layer: number; layerHeight: numb
       onResponderTerminate={(e) => releaseTouches(e.nativeEvent.changedTouches)}
     >
       <Canvas
-          dpr={1}
         style={styles.canvas}
         gl={{ antialias: false, powerPreference: 'low-power' }}
         onCreated={({ gl }) => { try { (gl as any).setClearColor?.('#0a0f18', 1); } catch (e) {} }}
