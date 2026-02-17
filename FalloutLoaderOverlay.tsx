@@ -2,6 +2,12 @@ import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, PanResponder, Text, View, StyleSheet } from 'react-native';
 import { Canvas, useFrame } from '@react-three/fiber/native';
 import { useGLTF, useProgress, useTexture } from '@react-three/drei/native';
+import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
+
+try {
+  (useGLTF as any).setMeshoptDecoder?.(MeshoptDecoder);
+} catch {}
+
 import * as THREE from 'three';
 import { MeshBVH } from 'three-mesh-bvh';
 
@@ -15,7 +21,16 @@ function PreloadOne(props: { url: string; onBvhDone: (url: string) => void }) {
   const e = ext(props.url);
 
   if (e === 'glb' || e === 'gltf') {
-    const { scene } = useGLTF(props.url);
+    const gltf: any = useLoader(
+      GLTFLoader,
+      props.url,
+      (loader: any) => {
+        try {
+          if (loader?.setMeshoptDecoder) loader.setMeshoptDecoder(MeshoptDecoder);
+        } catch {}
+      }
+    );
+const scene: any = Array.isArray(gltf) ? gltf[0]?.scene : gltf?.scene;
 
     useEffect(() => {
       if (!scene) return;
@@ -45,7 +60,18 @@ function PreloadOne(props: { url: string; onBvhDone: (url: string) => void }) {
 }
 
 function LootModel({ url, rotYRef }: { url: string; rotYRef: React.MutableRefObject<number> }) {
-  const { scene } = useGLTF(url);
+  if (!url || String(url).includes("DISABLED_spawn_gazebo.glb")) return null;
+  const gltf: any = useGLTF(
+    url,
+    undefined,
+    true,
+    (loader: any) => {
+      try {
+        if (loader?.setMeshoptDecoder) loader.setMeshoptDecoder(MeshoptDecoder);
+      } catch {}
+    }
+  );
+  const scene: any = Array.isArray(gltf) ? gltf[0]?.scene : gltf?.scene;
   const obj = useMemo(() => scene.clone(true), [scene]);
 
   useFrame(() => {
@@ -177,3 +203,7 @@ const styles = StyleSheet.create({
   barInner: { height: 12, backgroundColor: 'rgba(120,170,255,0.85)' },
   pct: { color: '#fff', marginTop: 10, textAlign: 'right', fontWeight: '900' },
 });
+
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+
+import { useLoader } from "@react-three/fiber";
