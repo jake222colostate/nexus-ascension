@@ -5,6 +5,9 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber/native';
 import { useGLTF, useProgress, Clone, useAnimations, useTexture } from '@react-three/drei/native';
 import * as THREE from 'three';
 import { SkeletonUtils } from 'three-stdlib';
+import { ensureMeshoptDecoder } from './src/loading/meshoptSetup';
+ensureMeshoptDecoder();
+
 type FantasyWorld3DProps = {
   shootPulse: number;
   bulletDmgEnemy: number;
