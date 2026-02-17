@@ -14,6 +14,14 @@ import WorldHUD from './WorldHUD';
 import { WORLD_ENTRY_ASSETS } from './src/assets/assetManifest';
 import { isWorldReady, markWorldReady } from './src/loading/worldLoadState';
 
+const __origLog = console.log.bind(console);
+console.log = (...args: any[]) => {
+  const msg = args && args.length ? String(args[0]) : "";
+  if (msg.includes("EXGL: gl.pixelStorei() doesn\x27t support this parameter yet!")) return;
+  if (msg.includes("onAnimatedValueUpdate") && msg.includes("no listeners")) return;
+  __origLog(...args);
+};
+
 type RootStackParamList = {
   Home: undefined;
   Fantasy: undefined;

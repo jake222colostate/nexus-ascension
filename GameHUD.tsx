@@ -4,23 +4,17 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 type NavButton = { label: string; onPress: () => void };
 
-type ActionButton = {
-  kind: 'press' | 'hold';
-  label: string;
-  activeLabel?: string;
-  active?: boolean;
-  onPress?: () => void;
-  onHoldStart?: () => void;
-  onHoldEnd?: () => void;
-};
+type HudButton =
+  | { kind: 'press'; label: string; onPress: () => void }
+  | { kind: 'hold'; label: string; activeLabel: string; active: boolean; onHoldStart: () => void; onHoldEnd: () => void };
 
 export default function GameHUD(props: {
   title?: string;
   leftSub?: string;
   rightLines?: string[];
   navButtons?: NavButton[];
+  buttons?: HudButton[];
   toast?: string;
-  buttons?: ActionButton[];
 
   onOpenUpgrades?: () => void;
 
@@ -31,8 +25,8 @@ export default function GameHUD(props: {
 }) {
   const rightLines = props.rightLines ?? [];
   const navButtons = props.navButtons ?? [];
-  const actionButtons = props.buttons ?? [];
 
+  const buttons = (props as any).buttons ?? [];
   const showUpgrades = !!props.upgradesOpen;
   const upgradesTitle = props.upgradesTitle ?? 'Upgrades';
   const hasUpgrades = !!props.onOpenUpgrades;
@@ -82,23 +76,7 @@ export default function GameHUD(props: {
           </View>
         )}
 
-        {actionButtons.length > 0 && (
-          <View pointerEvents="box-none" style={styles.bottomActions}>
-            <View style={styles.bottomActionsRow}>
-              {actionButtons.map((b, i) => (
-                <Pressable
-                  key={i}
-                  onPress={b.kind === 'press' ? b.onPress : undefined}
-                  onPressIn={b.kind === 'hold' ? b.onHoldStart : undefined}
-                  onPressOut={b.kind === 'hold' ? b.onHoldEnd : undefined}
-                  style={({ pressed }) => [styles.bottomActionBtn, pressed && styles.pressed]}
-                >
-                  <Text style={styles.bottomActionText}>{b.active ? (b.activeLabel ?? b.label) : b.label}</Text>
-                </Pressable>
-              ))}
-            </View>
-          </View>
-        )}
+        {/* (No bottom nav/actions here — bottom is handled by FantasyScreen so nothing overlaps.) */}
 
         <Modal visible={showUpgrades} transparent animationType="fade" onRequestClose={props.onCloseUpgrades}>
           <View style={styles.modalOverlay}>
@@ -212,25 +190,6 @@ safe: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
     borderColor: 'rgba(255,255,255,0.14)',
   },
   toastText: { color: '#EAF0FF', fontWeight: '900', fontSize: 12 },
-
-  bottomActions: {
-    position: 'absolute',
-    left: 12,
-    right: 12,
-    bottom: 16,
-  },
-  bottomActionsRow: { flexDirection: 'row', gap: 8 },
-  bottomActionBtn: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 12,
-    paddingVertical: 12,
-    backgroundColor: 'rgba(7, 10, 18, 0.74)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.16)',
-  },
-  bottomActionText: { color: '#EAF0FF', fontWeight: '900', fontSize: 13 },
 
   pressed: { opacity: 0.85 },
 

@@ -59,7 +59,7 @@ const USE_GAZEBO_BVH = false;
 
 const MOUNTAIN_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/mountain_v2.glb';
 
-const GAZEBO_URL = 'DISABLED_spawn_gazebo.glb';
+const GAZEBO_URL = '';
 const PATH_GLB_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/path.glb';
 const PATH_DEBUG_VER = "v2";
 const PODIUM_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/podium_v1.glb';
@@ -71,7 +71,6 @@ const MONSTER1_ATTACK_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1
 
 const MONSTER1_MODEL_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/monster1/monster1_model.glb';
 useGLTF.preload(MOUNTAIN_URL);
-useGLTF.preload(GAZEBO_URL);
 useGLTF.preload(PATH_GLB_URL);
 useGLTF.preload(PODIUM_URL);
 
@@ -654,7 +653,7 @@ return (
         {(idx === 0 && !!props.showGazebo) ? (
             SHOW_GAZEBO_MESH ? (
               <group ref={gazeboRef}>
-                <GazeboGLB position={[0, GAZEBO_LIFT + 0.35, 0]} scale={12.0} rotationY={Math.PI} />
+                {GAZEBO_URL ? <GazeboGLB position={[0, GAZEBO_LIFT + 0.35, 0]} scale={12.0} rotationY={Math.PI} /> : null}
               </group>
             ) : (
               <group>
