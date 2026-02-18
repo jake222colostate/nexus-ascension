@@ -1,5 +1,5 @@
 import React, { Suspense, useEffect, useMemo, useRef } from 'react';
-import { useGLTFMeshopt, preloadGLTFMeshopt } from './src/loading/meshoptSetup';
+import { useGLTFMeshopt, preloadGLTFMeshopt } from "./src/loading/meshoptSetup";
 import { useThree } from '@react-three/fiber/native';
 import { useTexture } from '@react-three/drei/native';
 import { StyleSheet, View } from 'react-native';

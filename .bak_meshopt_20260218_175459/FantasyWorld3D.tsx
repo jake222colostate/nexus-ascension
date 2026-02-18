@@ -1,5 +1,5 @@
 import React, {useEffect, useMemo, useRef, useState, Suspense, useCallback} from 'react';
-import { useGLTFMeshopt, preloadGLTFMeshopt } from './src/loading/meshoptSetup';
+import { useGLTFMeshopt, preloadGLTFMeshopt } from "./src/loading/meshoptSetup";
 import { MeshBVH, acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from "three-mesh-bvh";
 import { View, StyleSheet, useWindowDimensions} from 'react-native';
 import { Canvas, useFrame, useThree } from '@react-three/fiber/native';

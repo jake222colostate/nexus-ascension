@@ -67,3 +67,10 @@ backups/
 .#*
 #*#
 *.rej
+
+# junk / noise
+.ipynb_checkpoints/
+.bak_noise/
+backups/
+*.bak
+513
