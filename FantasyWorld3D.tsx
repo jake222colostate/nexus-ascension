@@ -1,4 +1,5 @@
 import React, {useEffect, useMemo, useRef, useState, Suspense, useCallback} from 'react';
+import { Asset } from 'expo-asset';
 import { useGLTFMeshopt, preloadGLTFMeshopt } from './src/loading/meshoptSetup';
 import { MeshBVH, acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from "three-mesh-bvh";
 import { View, StyleSheet, useWindowDimensions} from 'react-native';
@@ -58,7 +59,7 @@ const USE_GAZEBO_BVH = false;
 
 const MOUNTAIN_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/mountain_v2.glb';
 
-const GAZEBO_URL = '';
+const GAZEBO_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/spawn_gazebo.glb';
 const PATH_GLB_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/path.glb';
 const PATH_DEBUG_VER = "v2";
 const PODIUM_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/podium_v1.glb';
@@ -136,30 +137,20 @@ function MountainGLB(props: { position: [number, number, number]; scale?: number
 
 
 
-function GazeboGLB(props: { position: [number, number, number]; scale?: number; rotationY?: number }) {
-  const gltf: any = useGLTFMeshopt(GAZEBO_URL as any);
-  const scene: any = Array.isArray(gltf) ? gltf[0]?.scene : gltf?.scene;
+function GazeboGLBLoaded(props: { uri: string; position: [number, number, number]; scale?: number; rotationY?: number }) {
+  const gltf: any = useGLTFMeshopt(props.uri as any);
+  const [obj, setObj] = useState<THREE.Object3D | null>(null);
 
-  const obj = useMemo(() => {
-    const c: any = scene.clone(true);
-    // build BVH for gazebo meshes
+  useEffect(() => {
     try {
-      c.traverse((m: any) => {
-        if (!m?.isMesh || !m.geometry) return;
-        const g: any = m.geometry;
-        if (!g.boundsTree) g.boundsTree = new MeshBVH(g);
-      });
+      const root = gltf?.scene || gltf;
+      if (!root) return;
+      const c = root.clone(true);
+      setObj(c);
     } catch {}
-    try {
-      const box = new THREE.Box3().setFromObject(c);
-      const minY = box?.min?.y;
-if (typeof minY === 'number' && isFinite(minY) && Math.abs(minY) > 1e-5) {
-        // lift so the lowest vertex sits on y=0
-        c.position.y -= minY;
-      }
-    } catch {}
-    return c;
-  }, [scene]);
+  }, [gltf]);
+
+  if (!obj) return null;
   return (
     <primitive
       object={obj}
@@ -168,6 +159,17 @@ if (typeof minY === 'number' && isFinite(minY) && Math.abs(minY) > 1e-5) {
       rotation={[0, props.rotationY ?? 0, 0]}
     />
   );
+}
+
+function GazeboGLB(props: { position: [number, number, number]; scale?: number; rotationY?: number }) {
+  const uri = GAZEBO_URL;
+
+  useEffect(() => {
+    if (uri) preloadGLTFMeshopt(uri as any);
+  }, [uri]);
+
+  if (!uri) return null;
+  return <GazeboGLBLoaded uri={uri} position={props.position} scale={props.scale} rotationY={props.rotationY} />;
 }
 
 function PodiumGLB(props: { position: [number, number, number]; scale?: number | [number, number, number]; rotationY?: number }) {
