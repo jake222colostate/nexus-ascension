@@ -16,12 +16,84 @@ import { WORLD_ENTRY_ASSETS } from './src/assets/assetManifest';
 import { isWorldReady, markWorldReady } from './src/loading/worldLoadState';
 
 const __origLog = console.log.bind(console);
-console.log = (...args: any[]) => {
-  const msg = args && args.length ? String(args[0]) : "";
-  if (msg.includes("EXGL: gl.pixelStorei() doesn\x27t support this parameter yet!")) return;
-  if (msg.includes("onAnimatedValueUpdate") && msg.includes("no listeners")) return;
-  __origLog(...args);
-};
+const __origWarn = console.warn.bind(console);
+const __origError = console.error.bind(console);
+const __origInfo = console.info ? console.info.bind(console) : __origLog;
+const __origDebug = console.debug ? console.debug.bind(console) : __origLog;
+
+  const __base64Re = new RegExp("^[A-Za-z0-9+/=]+$");
+
+function __shouldSuppressLine(s: string) {
+  return (
+    s.includes("EXGL: gl.pixelStorei() doesn\x27t support this parameter yet!") ||
+    (s.includes("onAnimatedValueUpdate") && s.includes("no listeners"))
+  );
+}
+
+function __sanitizeArgs(args: any[]): any[] | null {
+  const out: any[] = [];
+  for (const a of args || []) {
+    if (typeof a === "string") {
+      const s = a;
+      if (__shouldSuppressLine(s)) return null;
+
+      const looksLikeImageData =
+        (s.length > 200 && s.startsWith("data:image")) ||
+        s.includes("iVBORw0KGgo") ||
+        s.includes("JRU5ErkJggg") ||
+        (s.length > 600 && __base64Re.test(s));
+
+      if (looksLikeImageData) {
+        out.push("<omitted image/base64 blob len=" + s.length + "> ");
+        continue;
+      }
+
+      if (s.length > 2000) {
+        out.push(s.slice(0, 500) + "… <truncated len=" + s.length + ">");
+        continue;
+      }
+    }
+    out.push(a);
+  }
+  return out;
+}
+
+function __wrapConsole(orig: (...a: any[]) => void) {
+  return (...args: any[]) => {
+    const s = __sanitizeArgs(args);
+    if (!s) return;
+    orig(...s);
+  };
+}
+
+console.log = __wrapConsole(__origLog);
+console.warn = __wrapConsole(__origWarn);
+console.error = __wrapConsole(__origError);
+console.info = __wrapConsole(__origInfo);
+console.debug = __wrapConsole(__origDebug);
+
+  try {
+    const THREE = require("three");
+    const mgr = (THREE as any).DefaultLoadingManager;
+    if (mgr && mgr.setURLModifier) {
+      mgr.setURLModifier((url: string) => {
+        try {
+          if (typeof url === "string" && url.length > 80) {
+            console.log("[URLMOD]", url.slice(0, 120));
+          } else {
+            console.log("[URLMOD]", url);
+          }
+        } catch {}
+        return url;
+      });
+    }
+  } catch {}
+console.log("<<CONSOLE WRAP ACTIVE>>");
+  try {
+    const hasBlob = typeof (global as any).Blob !== "undefined";
+    const hasCreate = typeof (global as any).URL !== "undefined" && typeof (global as any).URL.createObjectURL === "function";
+    console.log("<<BLOB_CHECK>>", { hasBlob, hasCreateObjectURL: hasCreate });
+  } catch {}
 
 type RootStackParamList = {
   Home: undefined;

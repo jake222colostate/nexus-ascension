@@ -1,15 +1,14 @@
-const path = require("path");
-const { getDefaultConfig } = require("expo/metro-config");
+const { getDefaultConfig } = require('@expo/metro-config');
+const path = require('path');
 
-const projectRoot = __dirname;
+const config = getDefaultConfig(__dirname);
 
-const config = getDefaultConfig(projectRoot);
-
-// Force Metro to always resolve a single copy of `three` from this repo's node_modules
-config.resolver = config.resolver || {};
 config.resolver.extraNodeModules = {
-  ...(config.resolver.extraNodeModules || {}),
-  three: path.join(projectRoot, "node_modules/three"),
+  three: path.resolve(__dirname, 'node_modules/three'),
 };
+
+config.resolver.blockList = [
+  /node_modules\/three\/examples\/.*/,
+];
 
 module.exports = config;
