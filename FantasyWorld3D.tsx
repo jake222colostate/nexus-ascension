@@ -1,6 +1,5 @@
 import React, {useEffect, useMemo, useRef, useState, Suspense, useCallback} from 'react';
 import { Asset } from 'expo-asset';
-import { useGLTFMeshopt, preloadGLTFMeshopt } from './src/loading/meshoptSetup';
 import { MeshBVH, acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from "three-mesh-bvh";
 import { View, StyleSheet, useWindowDimensions} from 'react-native';
 import { Canvas, useFrame, useThree } from '@react-three/fiber/native';
@@ -57,33 +56,33 @@ const SHOW_GAZEBO_MESH = true;
 const USE_GAZEBO_BVH = false;
 
 
-const MOUNTAIN_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/mountain_v2.glb';
+const MOUNTAIN_URL = Asset.fromModule(require("./assets/glb/fantasy3d/mountain_v2.glb")).uri;
 
-const GAZEBO_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/spawn_gazebo.glb';
-const PATH_GLB_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/path.glb';
+const GAZEBO_URL = Asset.fromModule(require("./assets/glb/fantasy3d/spawn_gazebo.glb")).uri;
+const PATH_GLB_URL = Asset.fromModule(require("./assets/glb/fantasy3d/path.glb")).uri;
 const PATH_DEBUG_VER = "v2";
-const PODIUM_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/podium_v1.glb';
+const PODIUM_URL = Asset.fromModule(require("./assets/glb/fantasy3d/podium_v1.glb")).uri;
   const SKYBOX_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/skybox1.jpg';
-const FOREST_TREE_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/forest_tree.glb';
-const MONSTER1_WALK_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/monster1/monster1_walking.glb';
-const MONSTER1_RUN_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/monster1/monster1_running.glb';
-const MONSTER1_ATTACK_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/monster1/monster1_attack_v1.glb';
+const FOREST_TREE_URL = Asset.fromModule(require("./assets/glb/fantasy3d/forest_tree.glb")).uri;
+const MONSTER1_WALK_URL = Asset.fromModule(require("./assets/glb/fantasy3d/monster1/monster1_walking.glb")).uri;
+const MONSTER1_RUN_URL = Asset.fromModule(require("./assets/glb/fantasy3d/monster1/monster1_running.glb")).uri;
+const MONSTER1_ATTACK_URL = Asset.fromModule(require("./assets/glb/fantasy3d/monster1/monster1_attack_v1.glb")).uri;
 
-const MONSTER1_MODEL_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/monster1/monster1_model.glb';
-preloadGLTFMeshopt(MOUNTAIN_URL);
-preloadGLTFMeshopt(PATH_GLB_URL);
-preloadGLTFMeshopt(PODIUM_URL);
+const MONSTER1_MODEL_URL = Asset.fromModule(require("./assets/glb/fantasy3d/monster1/monster1_model.glb")).uri;
+useGLTF.preload(MOUNTAIN_URL as any);
+useGLTF.preload(PATH_GLB_URL as any);
+useGLTF.preload(PODIUM_URL as any);
 
-preloadGLTFMeshopt(MONSTER1_MODEL_URL);
-preloadGLTFMeshopt(MONSTER1_WALK_URL);
-preloadGLTFMeshopt(MONSTER1_RUN_URL);
-preloadGLTFMeshopt(MONSTER1_ATTACK_URL);
-preloadGLTFMeshopt(FOREST_TREE_URL);
-const FOREST_FOREST_TREE_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/environment-fantasy3d/forest_tree.glb';
-preloadGLTFMeshopt(FOREST_FOREST_TREE_URL);
+useGLTF.preload(MONSTER1_MODEL_URL as any);
+useGLTF.preload(MONSTER1_WALK_URL as any);
+useGLTF.preload(MONSTER1_RUN_URL as any);
+useGLTF.preload(MONSTER1_ATTACK_URL as any);
+useGLTF.preload(FOREST_TREE_URL as any);
+const FOREST_FOREST_TREE_URL = Asset.fromModule(require("./assets/glb/fantasy3d/forest_tree.glb")).uri;
+useGLTF.preload(FOREST_FOREST_TREE_URL as any);
 
 function MountainGLB(props: { position: [number, number, number]; scale?: number | [number, number, number]; rotationY?: number }) {
-  const { scene } = useGLTFMeshopt(MOUNTAIN_URL);
+  const { scene } = useGLTF(MOUNTAIN_URL);
 
   const obj = useMemo<THREE.Object3D>(() => {
     const clone = scene.clone(true);
@@ -138,7 +137,7 @@ function MountainGLB(props: { position: [number, number, number]; scale?: number
 
 
 function GazeboGLBLoaded(props: { uri: string; position: [number, number, number]; scale?: number; rotationY?: number }) {
-  const gltf: any = useGLTFMeshopt(props.uri as any);
+  const gltf: any = useGLTF(props.uri as any);
   const [obj, setObj] = useState<THREE.Object3D | null>(null);
 
   useEffect(() => {
@@ -165,7 +164,7 @@ function GazeboGLB(props: { position: [number, number, number]; scale?: number; 
   const uri = GAZEBO_URL;
 
   useEffect(() => {
-    if (uri) preloadGLTFMeshopt(uri as any);
+    if (uri) useGLTF.preload(uri as any as any);
   }, [uri]);
 
   if (!uri) return null;
@@ -173,7 +172,7 @@ function GazeboGLB(props: { position: [number, number, number]; scale?: number; 
 }
 
 function PodiumGLB(props: { position: [number, number, number]; scale?: number | [number, number, number]; rotationY?: number }) {
-  const { scene } = useGLTFMeshopt(PODIUM_URL);
+  const { scene } = useGLTF(PODIUM_URL);
 
   return (
     <group position={props.position} scale={props.scale || 1.0} rotation={[0, props.rotationY || 0, 0]}>
@@ -188,7 +187,7 @@ function PodiumGLB(props: { position: [number, number, number]; scale?: number |
     targetW?: number; // desired X size in world units
     targetL?: number; // desired Z size in world units
   }) {
-    const { scene } = useGLTFMeshopt(PATH_GLB_URL);
+    const { scene } = useGLTF(PATH_GLB_URL);
 
     const memo = useMemo(() => {
       const clone: any = scene.clone(true);
@@ -232,7 +231,7 @@ function PodiumGLB(props: { position: [number, number, number]; scale?: number |
 
 
 function ForestTreeGLB(props: { position: [number, number, number]; scale?: number; rotationY?: number }) {
-  const { scene } = useGLTFMeshopt(FOREST_FOREST_TREE_URL);
+  const { scene } = useGLTF(FOREST_FOREST_TREE_URL);
 
   const memo = useMemo(() => {
     const c: any = scene.clone(true);
@@ -419,9 +418,9 @@ function resolveSphereMeshBVH(
   function Monster1GLB(props: { position: [number, number, number]; scale?: number; rotationY?: number; anim: EnemyAnim }) {
   const ref = useRef<THREE.Group>(null);
 
-  const walkG: any = useGLTFMeshopt(MONSTER1_WALK_URL as any);
-  const runG: any = useGLTFMeshopt(MONSTER1_RUN_URL as any);
-  const atkG: any = useGLTFMeshopt(MONSTER1_ATTACK_URL as any);
+  const walkG: any = useGLTF(MONSTER1_WALK_URL as any);
+  const runG: any = useGLTF(MONSTER1_RUN_URL as any);
+  const atkG: any = useGLTF(MONSTER1_ATTACK_URL as any);
 
   const baseScene: any =
     (walkG && walkG.scene) ? walkG.scene :

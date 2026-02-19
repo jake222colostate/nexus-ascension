@@ -1,48 +1,46 @@
 import { useLoader } from '@react-three/fiber/native';
 import { useGLTF } from '@react-three/drei/native';
-import { GLTFLoader } from 'three-stdlib';
-import * as meshopt from 'meshoptimizer';
-
-const MeshoptDecoder: any =
-  (meshopt as any).MeshoptDecoder ??
-  (meshopt as any).MeshoptDecoderModule ??
-  (meshopt as any).default ??
-  meshopt;
+import { MeshoptDecoder } from 'meshoptimizer';
+import { MeshoptGLTFLoaderV2 } from './MeshoptGLTFLoaderV2';
 
 let didGlobal = false;
+let readyPromise: Promise<void> | null = null;
 
-function applyMeshoptToLoader(loader: any) {
-  try {
-    if (!MeshoptDecoder) return;
-    if (loader?.setMeshoptDecoder) loader.setMeshoptDecoder(MeshoptDecoder);
-  } catch {}
+function getReadyPromise(): Promise<void> {
+  if (!readyPromise) {
+    readyPromise = Promise.resolve((MeshoptDecoder as any)?.ready)
+      .then(() => {})
+      .catch(() => {});
+  }
+  return readyPromise;
 }
 
-function applyGlobalOnce() {
+export function ensureMeshoptDecoder() {
   if (didGlobal) return;
   didGlobal = true;
-
   try {
     if ((useGLTF as any)?.setMeshoptDecoder && MeshoptDecoder) {
-      (useGLTF as any).setMeshoptDecoder(MeshoptDecoder);
+      (useGLTF as any).setMeshoptDecoder(MeshoptDecoder as any);
     }
   } catch {}
 }
 
-export function ensureMeshoptDecoder() {
-  applyGlobalOnce();
-}
-
 export function useGLTFMeshopt(url: any): any {
-  applyGlobalOnce();
-  return useLoader(GLTFLoader as any, url, (loader: any) => {
-    applyMeshoptToLoader(loader);
-  });
+  ensureMeshoptDecoder();
+  const r: any = MeshoptDecoder as any;
+  if (r?.ready && typeof r.ready.then === 'function') {
+    if (!r._nexusReady) {
+      throw getReadyPromise().then(() => {
+        r._nexusReady = true;
+      });
+    }
+  }
+  return useLoader(MeshoptGLTFLoaderV2 as any, url);
 }
 
 export function preloadGLTFMeshopt(url: any) {
-  applyGlobalOnce();
-  (useLoader as any).preload(GLTFLoader as any, url, (loader: any) => {
-    applyMeshoptToLoader(loader);
+  ensureMeshoptDecoder();
+  getReadyPromise().then(() => {
+    (useLoader as any).preload(MeshoptGLTFLoaderV2 as any, url);
   });
 }

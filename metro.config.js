@@ -4,6 +4,8 @@ const { resolve } = require("metro-resolver");
 
 const config = getDefaultConfig(__dirname);
 
+config.resolver.assetExts = Array.from(new Set([...(config.resolver.assetExts || []), "glb", "gltf", "bin"]));
+
 config.resolver.resolveRequest = (context, moduleName, platform) => {
   // Force ONE Three.js instance everywhere (three + three/*)
   if (moduleName === "three" || moduleName.startsWith("three/")) {
