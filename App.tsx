@@ -875,6 +875,9 @@ function CombatWorld({ cfg }: { cfg: CombatConfig }) {
     const [upOpen, setUpOpen] = useState(false);
     const [shootPulse, setShootPulse] = useState(0);
 
+      const killsRef = useRef<number>(0);
+
+
     const [podiumOpen, setPodiumOpen] = useState(false);
     const [podiumChoices, setPodiumChoices] = useState<PodiumChoice[]>([]);
 
@@ -882,7 +885,6 @@ function CombatWorld({ cfg }: { cfg: CombatConfig }) {
     const [bossOpen, setBossOpen] = useState(false);
     const [bossMaxHp, setBossMaxHp] = useState(500);
     const [bossHp, setBossHp] = useState(500);
-    const killsRef = useRef<number>(0);
     const podiumsRef = useRef<number>(0);
 
     const rewardMult = 1 + tier.value * 0.05;
