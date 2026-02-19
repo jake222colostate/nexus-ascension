@@ -8,10 +8,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import './src/loading/meshoptSetup';
 import FantasyWorld3D from './FantasyWorld3D';
-import GameHUD from './GameHUD';
 import FalloutLoaderOverlay from './FalloutLoaderOverlay';
 import SkybaseWorld3D from './SkybaseWorld3D';
-import WorldHUD from './WorldHUD';
+import { GameHUD } from './src/ui/hud/GameHUD';
 import { WORLD_ENTRY_ASSETS } from './src/assets/assetManifest';
 import { isWorldReady, markWorldReady } from './src/loading/worldLoadState';
 
@@ -190,7 +189,7 @@ function useStoredNumber(key: string, fallback: number) {
 
 function HomeScreen({ navigation }: any) {
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView edges={[]} style={styles.safe}>
       <View style={styles.container}>
         <Text style={styles.title}>Nexus Ascension</Text>
         <Text style={styles.subtitle}>Idle-Action • Dual Worlds • One Progression</Text>
@@ -600,7 +599,7 @@ function CombatWorld({ cfg }: { cfg: CombatConfig }) {
   }
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView edges={[]} style={styles.safe}>
       <Modal visible={devOpen} transparent animationType="fade">
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
@@ -838,7 +837,7 @@ function CombatWorld({ cfg }: { cfg: CombatConfig }) {
   );
 }
 
-  function FantasyScreen() {
+  function FantasyScreen({ navigation }: any) {
     const cfg: CombatConfig = {
       label: 'Fantasy Valley',
       currencyName: 'Mana',
@@ -1057,7 +1056,7 @@ function CombatWorld({ cfg }: { cfg: CombatConfig }) {
     }
 
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: '#0a0f18' }}>
+      <SafeAreaView edges={[]} style={{ flex: 1, backgroundColor: '#0a0f18' }}>
         <Modal visible={podiumOpen} transparent animationType="fade">
           <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', padding: 18 }}>
             <View style={{ backgroundColor: '#111827', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' }}>
@@ -1109,23 +1108,35 @@ function CombatWorld({ cfg }: { cfg: CombatConfig }) {
           />
 
           <View style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 }} pointerEvents="box-none">
-          <GameHUD
-              title={'Fantasy Valley'}
-              leftSub={`Mana ${formatInt(currency.value)} • +${autoPerSec.toFixed(2)}/s`}
-              rightLines={[`DPS ${dps.toFixed(1)}`, `Tier ${tier.value} • Mon ${monuments.value}`, `${killsRef.current} K • ${podiumsRef.current} P`]}
-              buttons={[
-                { kind: 'hold', label: 'Hold to Walk', activeLabel: 'Walking…', active: walking, onHoldStart: () => setWalking(true), onHoldEnd: () => setWalking(false) },
-                { kind: 'press', label: 'Shoot', onPress: () => setShootPulse((n) => n + 1) },
-                { kind: 'press', label: `Tap +${tapGain}`, onPress: () => currency.add(tapGain) },
-              ]}
-              onOpenUpgrades={() => setUpOpen(true)}
-              toast={toast}
-              upgradesOpen={upOpen}
-              onCloseUpgrades={() => setUpOpen(false)}
-              upgradesTitle={'Fantasy Upgrades'}
-              upgradesBody={fantasyUpgradesBody()}
-            />
-          </View>
+          
+              <GameHUD
+                currentWorld="Fantasy"
+                onSwitchWorld={(target) => navigation.navigate(target)}
+                manaText={`Mana ${formatInt(currency.value)} • +${autoPerSec.toFixed(2)}/s`}
+                statRight={[
+                  `DPS ${dps.toFixed(2)}`,
+                  `Tier ${tier.value} / Mon ${monuments.value}`,
+                  `K/P ${killsRef.current}/${Math.max(1, podiumsRef.current)}`,
+                ]}
+                shootLabel={`Shoot +${tapGain}`}
+                onShoot={() => {
+                  setShootPulse((v) => v + 1);
+                  currency.add(tapGain);
+                }}
+                onMoveStart={() => setWalking(true)}
+                onMoveEnd={() => setWalking(false)}
+                upgradesOpen={false}
+                onOpenUpgrades={() => undefined}
+                onCloseUpgrades={() => undefined}
+                toast={toast}
+                activeUpgradeTab={'fantasy' as any}
+                onUpgradeTab={() => undefined}
+                levels={{} as any}
+                lockReason={undefined}
+                onBuyUpgrade={() => undefined}
+              />
+</View>
+
           </View>
         </SafeAreaView>
     );
@@ -1171,30 +1182,37 @@ function SkybaseScreen({ navigation }: any) {
   const [upOpen, setUpOpen] = useState(false);
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView edges={[]} style={styles.safe}>
       <View style={{ flex: 1, width: '100%', height: '100%', alignSelf: 'stretch' }}>
         <SkybaseWorld3D layer={1} layerHeight={0} />
 
         <View style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 }} pointerEvents="box-none">
-        <GameHUD
-            title={'Skybase'}
-            leftSub={`Energy ${formatInt(energy.value)}`}
-            rightLines={[]}
-              navButtons={[{ label: 'Hub', onPress: () => navigation.navigate('Hub') }, { label: 'Fantasy', onPress: () => navigation.navigate(isWorldReady('fantasy') ? 'Fantasy' : 'LoadingFantasy') }]}
-            buttons={[
-              { kind: 'press', label: 'Tap +1', onPress: () => energy.add(1) },
-            ]}
-            onOpenUpgrades={() => setUpOpen(true)}
-            upgradesOpen={upOpen}
-            onCloseUpgrades={() => setUpOpen(false)}
-            upgradesTitle={'Skybase Upgrades'}
-            upgradesBody={(
-              <View>
-                <Text style={{ color: '#B8C0D6', fontSize: 12, lineHeight: 18 }}>Coming next: sci-fi upgrade tree mirroring Fantasy (tap, auto, damage, rate, unlocks).</Text>
-              </View>
-            )}
-          />
-        </View>
+        
+            <GameHUD
+              currentWorld="Skybase"
+              onSwitchWorld={(target) => navigation.navigate(target)}
+              manaText={`Energy ${formatInt(energy.value)}`}
+              statRight={[
+                `Tier 0 / Mon 0`,
+                `DPS 0.00`,
+                `K/P 0/0`,
+              ]}
+              shootLabel={`Shoot +1`}
+              onShoot={() => energy.add(1)}
+              onMoveStart={() => undefined}
+              onMoveEnd={() => undefined}
+              upgradesOpen={false}
+              onOpenUpgrades={() => undefined}
+              onCloseUpgrades={() => undefined}
+              toast={''}
+              activeUpgradeTab={'skybase' as any}
+              onUpgradeTab={() => undefined}
+              levels={{} as any}
+              lockReason={undefined}
+              onBuyUpgrade={() => undefined}
+            />
+</View>
+
         </View>
       </SafeAreaView>
   );
@@ -1210,7 +1228,7 @@ function SettingsScreen() {
 
 function ScreenStub({ title, body }: { title: string; body: string }) {
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView edges={[]} style={styles.safe}>
       <View style={styles.stub}>
         <Text style={styles.stubTitle}>{title}</Text>
         <Text style={styles.stubBody}>{body}</Text>

@@ -1,7 +1,7 @@
 import { StyleSheet } from 'react-native';
 
 export const hudStyles = StyleSheet.create({
-  root: { ...StyleSheet.absoluteFillObject, justifyContent: 'space-between' },
+  root: { ...StyleSheet.absoluteFillObject, justifyContent: 'space-between', zIndex: 999999, elevation: 999999 },
   topWrap: { paddingHorizontal: 14, gap: 10 },
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   leftStack: { gap: 8, flex: 1 },

@@ -30,7 +30,7 @@ type Projectile = { id: string; pos: THREE.Vector3; vel: THREE.Vector3; ttl: num
 const CHUNK_LEN = 40;
 const PODIUM_TOP_Y = 2.00;
 
-const GAZEBO_LIFT = 4.0;
+const GAZEBO_LIFT = 9.0;
 const STAND_H = 1.15;
 const GAZEBO_BASE_Y = GAZEBO_LIFT + 0.35;
 const GAZEBO_PLATFORM_Y = GAZEBO_BASE_Y + 2.60;
@@ -405,7 +405,7 @@ function resolveSphereMeshBVH(
     const maxHp = kind === 'boss' ? 120 : 40;
     const hp = maxHp;
     const spd = kind === 'boss' ? 2.1 : 2.7;
-    const y = kind === 'boss' ? 1.2 : 0.7;
+    const y = 0;
     const runner = (kind !== 'boss') && (Math.random() < 0.20);
       const baseSpd = spd;
       const wanderYaw = (Math.random() * Math.PI * 2);
