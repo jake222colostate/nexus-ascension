@@ -872,6 +872,7 @@ function CombatWorld({ cfg }: { cfg: CombatConfig }) {
     const toastTimer = useRef<any>(null);
 
     const [walking, setWalking] = useState(false);
+    const [upOpen, setUpOpen] = useState(false);
     const [shootPulse, setShootPulse] = useState(0);
 
     const [podiumOpen, setPodiumOpen] = useState(false);
@@ -881,8 +882,6 @@ function CombatWorld({ cfg }: { cfg: CombatConfig }) {
     const [bossOpen, setBossOpen] = useState(false);
     const [bossMaxHp, setBossMaxHp] = useState(500);
     const [bossHp, setBossHp] = useState(500);
-      const [upOpen, setUpOpen] = useState(false);
-
     const killsRef = useRef<number>(0);
     const podiumsRef = useRef<number>(0);
 
@@ -1125,9 +1124,9 @@ function CombatWorld({ cfg }: { cfg: CombatConfig }) {
                 }}
                 onMoveStart={() => setWalking(true)}
                 onMoveEnd={() => setWalking(false)}
-                upgradesOpen={false}
-                onOpenUpgrades={() => undefined}
-                onCloseUpgrades={() => undefined}
+                upgradesOpen={upOpen}
+                  onOpenUpgrades={() => setUpOpen(true)}
+                  onCloseUpgrades={() => setUpOpen(false)}
                 toast={toast}
                 activeUpgradeTab={'fantasy' as any}
                 onUpgradeTab={() => undefined}
@@ -1201,9 +1200,9 @@ function SkybaseScreen({ navigation }: any) {
               onShoot={() => energy.add(1)}
               onMoveStart={() => undefined}
               onMoveEnd={() => undefined}
-              upgradesOpen={false}
-              onOpenUpgrades={() => undefined}
-              onCloseUpgrades={() => undefined}
+              upgradesOpen={upOpen}
+                  onOpenUpgrades={() => setUpOpen(true)}
+                  onCloseUpgrades={() => setUpOpen(false)}
               toast={''}
               activeUpgradeTab={'skybase' as any}
               onUpgradeTab={() => undefined}

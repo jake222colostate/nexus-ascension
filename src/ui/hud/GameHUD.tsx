@@ -61,7 +61,7 @@ export function GameHUD(props: {
             <View style={hudStyles.leftStack}>
               <StatPill text={props.manaText} />
               <Pressable
-                style={[hudStyles.pill, { alignSelf: 'flex-start', paddingVertical: 7 }]}
+                style={[hudStyles.pill, { alignSelf: "flex-start", paddingVertical: 7, backgroundColor: "rgba(63,116,255,0.35)", borderColor: "rgba(126,160,255,0.55)" }]}
                 onPress={props.onOpenUpgrades}
               >
                 <Text style={hudStyles.pillText}>Upgrades</Text>
