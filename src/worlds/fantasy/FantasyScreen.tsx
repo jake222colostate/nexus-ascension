@@ -27,6 +27,7 @@ export function FantasyScreen({ navigation, game }: any) {
   return (
     <View style={{ flex: 1, backgroundColor: '#000' }}>
       <FantasyWorld3D
+          onReady={() => setLoading(false)}
         walking={walking}
         shootPulse={shootPulse}
         bulletDmgEnemy={1}

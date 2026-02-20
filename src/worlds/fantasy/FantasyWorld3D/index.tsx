@@ -26,6 +26,9 @@ type EnemyKind = 'enemy' | 'boss';
 type EnemyAnim = 'walk' | 'run' | 'attack';
 type Enemy = { id: string; kind: EnemyKind; runner: boolean; baseSpd: number; aggro: boolean; wanderYaw: number; wanderT: number; pos: THREE.Vector3; hp: number; maxHp: number; spd: number; anim: EnemyAnim; ry: number; atkCd: number };
 type Projectile = { id: string; pos: THREE.Vector3; vel: THREE.Vector3; ttl: number };
+// world-ready bridge (outer -> inner)
+const FANTASY_ON_READY_REF: { current: null | (() => void) } = { current: null };
+
 
 const CHUNK_LEN = 40;
 const PODIUM_TOP_Y = 2.00;
@@ -36,7 +39,7 @@ const GAZEBO_BASE_Y = GAZEBO_LIFT + 0.35;
 const GAZEBO_PLATFORM_Y = GAZEBO_BASE_Y + 2.60;
 
 const CHUNK_BACK = 2;
-const CHUNK_AHEAD = 2;
+const CHUNK_AHEAD = 3;
 
 const PATH_W = 5.2;
 const GRASS_W = 30;
@@ -56,30 +59,28 @@ const SHOW_GAZEBO_MESH = true;
 const USE_GAZEBO_BVH = false;
 
 
-const MOUNTAIN_URL = Asset.fromModule(require("./assets/glb/fantasy3d/mountain_v2.glb")).uri;
+const MOUNTAIN_URL = Asset.fromModule(require("../../../../assets/glb/fantasy3d/mountain_v2.glb")).uri;
 
-const GAZEBO_URL = Asset.fromModule(require("./assets/glb/fantasy3d/spawn_gazebo.glb")).uri;
-const PATH_GLB_URL = Asset.fromModule(require("./assets/glb/fantasy3d/path.glb")).uri;
+const GAZEBO_URL = Asset.fromModule(require("../../../../assets/glb/fantasy3d/spawn_gazebo.glb")).uri;
+const PATH_GLB_URL = Asset.fromModule(require("../../../../assets/glb/fantasy3d/path.glb")).uri;
 const PATH_DEBUG_VER = "v2";
-const PODIUM_URL = Asset.fromModule(require("./assets/glb/fantasy3d/podium_v1.glb")).uri;
+const PODIUM_URL = Asset.fromModule(require("../../../../assets/glb/fantasy3d/podium_v1.glb")).uri;
   const SKYBOX_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/skybox1.jpg';
-const FOREST_TREE_URL = Asset.fromModule(require("./assets/glb/fantasy3d/forest_tree.glb")).uri;
-const MONSTER1_WALK_URL = Asset.fromModule(require("./assets/glb/fantasy3d/monster1/monster1_walking.glb")).uri;
-const MONSTER1_RUN_URL = Asset.fromModule(require("./assets/glb/fantasy3d/monster1/monster1_running.glb")).uri;
-const MONSTER1_ATTACK_URL = Asset.fromModule(require("./assets/glb/fantasy3d/monster1/monster1_attack_v1.glb")).uri;
+const FOREST_TREE_URL = Asset.fromModule(require("../../../../assets/glb/fantasy3d/forest_tree.glb")).uri;
 
-const MONSTER1_MODEL_URL = Asset.fromModule(require("./assets/glb/fantasy3d/monster1/monster1_model.glb")).uri;
-useGLTF.preload(MOUNTAIN_URL as any);
-useGLTF.preload(PATH_GLB_URL as any);
-useGLTF.preload(PODIUM_URL as any);
+const CRYSTAL1_URL = Asset.fromModule(require("../../../../assets/glb/fantasy3d/Crystals/crystal1.glb")).uri;
+const CRYSTAL2_URL = Asset.fromModule(require("../../../../assets/glb/fantasy3d/Crystals/crystal2.glb")).uri;
+const CRYSTAL3_URL = Asset.fromModule(require("../../../../assets/glb/fantasy3d/Crystals/crystal3.glb")).uri;
+const CRYSTAL4_URL = Asset.fromModule(require("../../../../assets/glb/fantasy3d/Crystals/crystal4.glb")).uri;
+const CRYSTAL5_URL = Asset.fromModule(require("../../../../assets/glb/fantasy3d/Crystals/crystal5.glb")).uri;
 
-useGLTF.preload(MONSTER1_MODEL_URL as any);
-useGLTF.preload(MONSTER1_WALK_URL as any);
-useGLTF.preload(MONSTER1_RUN_URL as any);
-useGLTF.preload(MONSTER1_ATTACK_URL as any);
-useGLTF.preload(FOREST_TREE_URL as any);
-const FOREST_FOREST_TREE_URL = Asset.fromModule(require("./assets/glb/fantasy3d/forest_tree.glb")).uri;
-useGLTF.preload(FOREST_FOREST_TREE_URL as any);
+const MONSTER1_WALK_URL = Asset.fromModule(require("../../../../assets/glb/fantasy3d/monster1/monster1_walking.glb")).uri;
+const MONSTER1_RUN_URL = Asset.fromModule(require("../../../../assets/glb/fantasy3d/monster1/monster1_running.glb")).uri;
+const MONSTER1_ATTACK_URL = Asset.fromModule(require("../../../../assets/glb/fantasy3d/monster1/monster1_attack_v1.glb")).uri;
+
+const MONSTER1_MODEL_URL = Asset.fromModule(require("../../../../assets/glb/fantasy3d/monster1/monster1_model.glb")).uri;
+
+const FOREST_FOREST_TREE_URL = Asset.fromModule(require("../../../../assets/glb/fantasy3d/forest_tree.glb")).uri;
 
 function MountainGLB(props: { position: [number, number, number]; scale?: number | [number, number, number]; rotationY?: number }) {
   const { scene } = useGLTF(MOUNTAIN_URL);
@@ -164,7 +165,6 @@ function GazeboGLB(props: { position: [number, number, number]; scale?: number; 
   const uri = GAZEBO_URL;
 
   useEffect(() => {
-    if (uri) useGLTF.preload(uri as any as any);
   }, [uri]);
 
   if (!uri) return null;
@@ -1112,6 +1112,7 @@ spawnT.current += stepDt;
 
   const chunks = useMemo(() => Array.from({ length: CHUNK_BACK + CHUNK_AHEAD + 1 }, (_, i) => i - CHUNK_BACK), []);
   const baseChunk = baseChunkRef.current;
+    const didReadyRef = useRef(false);
 
   const fogColor = '#bfefff';
 
@@ -1134,6 +1135,7 @@ spawnT.current += stepDt;
       {chunks.map((i) => {
         const chunkIdx = baseChunk + i;
         const centerZ = -(chunkIdx * CHUNK_LEN) - (CHUNK_LEN / 2);
+          if (!didReadyRef.current && chunkIdx === baseChunk) { didReadyRef.current = true; FANTASY_ON_READY_REF.current?.(); }
         return <Chunk key={`c_${chunkIdx}`} idx={chunkIdx} centerZ={centerZ} showGazebo={showGazebo} onMountains={onMountains} onTrees={onTrees} />;
       })}
 
@@ -1218,6 +1220,7 @@ spawnT.current += stepDt;
 }
 
 function FantasyWorld3D(props: {
+  onReady?: () => void;
   walking?: boolean;
   shootPulse: number;
   bulletDmgEnemy: number;
@@ -1227,6 +1230,9 @@ function FantasyWorld3D(props: {
   onEnemyKilled: (kind: EnemyKind) => void;
 }) {
   const { width: W, height: H } = useWindowDimensions();
+
+  const onReadyRef = useRef<(() => void) | null>(props.onReady ?? null);
+  onReadyRef.current = props.onReady ?? null;
 
   const yawRef = useRef(0);
   const pitchRef = useRef(0);
@@ -1384,7 +1390,8 @@ function FantasyWorld3D(props: {
         <Suspense fallback={null}>
           
 
-          <Scene
+                    <CrystalField count={60} seed={20260220} centerZ={-40} spreadX={120} spreadZ={380} minY={22} maxY={80} />
+<Scene
           walking={!!props.walking}
           moveRef={moveRef}
           yawRef={yawRef}
@@ -1440,3 +1447,97 @@ const styles = StyleSheet.create({
 
 
 export default FantasyWorld3D;
+
+/** Crystal Field (Fantasy sky decoration) **/
+const CRYSTAL_URLS: any[] = [CRYSTAL1_URL, CRYSTAL2_URL, CRYSTAL3_URL, CRYSTAL4_URL, CRYSTAL5_URL];
+
+function CrystalGLB(props: {
+  uri: string;
+  position: [number, number, number];
+  scale?: number;
+  rotationY?: number;
+  rotationX?: number;
+  rotationZ?: number;
+}) {
+  const gltf: any = useGLTF(props.uri as any);
+  return (
+    <group
+      position={props.position as any}
+      rotation={[props.rotationX ?? 0, props.rotationY ?? 0, props.rotationZ ?? 0] as any}
+    >
+      <Clone object={gltf.scene} scale={props.scale ?? 1} />
+    </group>
+  );
+}
+
+function CrystalField(props: {
+  count?: number;
+  seed?: number;
+  centerZ?: number;
+  spreadX?: number;
+  spreadZ?: number;
+  minY?: number;
+  maxY?: number;
+}) {
+  const count = props.count ?? 60;
+  const seed = (props.seed ?? 1337) >>> 0;
+  const centerZ = props.centerZ ?? -40;
+  const spreadX = props.spreadX ?? 120;
+  const spreadZ = props.spreadZ ?? 380;
+  const minY = props.minY ?? 22;
+  const maxY = props.maxY ?? 80;
+
+  const rand = useMemo(() => {
+    let x = seed || 123456789;
+    return () => {
+      x ^= x << 13;
+      x ^= x >>> 17;
+      x ^= x << 5;
+      return ((x >>> 0) / 4294967296);
+    };
+  }, [seed]);
+
+  const items = useMemo(() => {
+    const out: Array<{
+      key: number;
+      uri: string;
+      position: [number, number, number];
+      s: number;
+      rx: number;
+      ry: number;
+      rz: number;
+    }> = [];
+
+    for (let i = 0; i < count; i++) {
+      const uri = CRYSTAL_URLS[Math.floor(rand() * CRYSTAL_URLS.length)] as any;
+
+      const x = (rand() - 0.5) * spreadX;
+      const z = centerZ + (rand() - 0.5) * spreadZ;
+      const y = minY + rand() * (maxY - minY);
+
+      const ry = rand() * Math.PI * 2;
+      const rx = (rand() - 0.5) * 0.25;
+      const rz = (rand() - 0.5) * 0.25;
+      const s = 2.5 + rand() * 6.5;
+
+      out.push({ key: i, uri, position: [x, y, z], s, rx, ry, rz });
+    }
+    return out;
+  }, [count, centerZ, spreadX, spreadZ, minY, maxY, rand]);
+
+  return (
+    <group>
+      {items.map((it) => (
+        <CrystalGLB
+          key={it.key}
+          uri={it.uri}
+          position={it.position}
+          scale={it.s}
+          rotationX={it.rx}
+          rotationY={it.ry}
+          rotationZ={it.rz}
+        />
+      ))}
+    </group>
+  );
+}
