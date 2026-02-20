@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import { Text, View, StyleSheet } from 'react-native';
 import { useProgress } from '@react-three/drei/native';
-import { preloadGLTFMeshopt } from './src/loading/meshoptSetup';
+import { preloadGLTFMeshopt } from '../../loading/meshoptSetup';
 
 type AssetDescriptor = { url: string };
 

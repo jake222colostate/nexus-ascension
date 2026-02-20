@@ -6,45 +6,45 @@ import { WorldLoadingScreen } from '../../ui/loading/WorldLoadingScreen';
 import { skybaseTips } from './skybaseLogic';
 
 export function SkybaseScreen({ navigation, game }: any) {
-  const [shootPulse, setShootPulse] = useState(0);
-  const [moving, setMoving] = useState(false);
   const [upgradesOpen, setUpgradesOpen] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  const shootGain = game.stats.skybaseTapGain;
+  const shootGain = game?.stats?.skybaseTapGain ?? 1;
+
   const onShoot = useCallback(() => {
-    setShootPulse((v) => v + 1);
-    game.addEnergy(shootGain);
+    if (game?.addEnergy) game.addEnergy(shootGain);
   }, [game, shootGain]);
 
   const statRight = useMemo(() => [
-    `DPS ${(12 * game.stats.skybaseDamageMult).toFixed(1)}`,
-    `Tier ${game.skybaseTier} / Mon ${game.monumentsSkybase}`,
-    `K/P ${Math.floor(game.skybaseTier * 10)}/${Math.max(1, game.skybaseTier)}`,
+    `DPS ${(12 * (game?.stats?.skybaseDamageMult ?? 1)).toFixed(1)}`,
+    `Tier ${game?.skybaseTier ?? 0} / Mon ${game?.monumentsSkybase ?? 0}`,
+    `K/P ${Math.floor((game?.skybaseTier ?? 0) * 10)}/${Math.max(1, game?.skybaseTier ?? 0)}`,
   ] as [string, string, string], [game]);
 
   return (
     <View style={{ flex: 1, backgroundColor: '#000' }}>
-      <SkybaseWorld3D shootPulse={shootPulse} moving={moving} damageMult={game.stats.skybaseDamageMult} onReady={() => setLoading(false)} onEnemyKilled={() => game.addEnergy(2)} />
+      <SkybaseWorld3D layer={1} layerHeight={0} />
+
       <GameHUD
         currentWorld="Skybase"
         onSwitchWorld={(target) => navigation.navigate(target)}
-        manaText={`Energy ${Math.floor(game.energy)} • +${game.stats.skybaseAutoGain.toFixed(2)}/s`}
+        manaText={`Energy ${Math.floor(game?.energy ?? 0)} • +${(game?.stats?.skybaseAutoGain ?? 0).toFixed(2)}/s`}
         statRight={statRight}
         shootLabel={`Shoot +${shootGain}`}
         onShoot={onShoot}
-        onMoveStart={() => setMoving(true)}
-        onMoveEnd={() => setMoving(false)}
+        onMoveStart={() => undefined}
+        onMoveEnd={() => undefined}
         upgradesOpen={upgradesOpen}
         onOpenUpgrades={() => setUpgradesOpen(true)}
         onCloseUpgrades={() => setUpgradesOpen(false)}
-        toast={game.toast}
-        activeUpgradeTab={game.activeUpgradeTab}
-        onUpgradeTab={game.setActiveUpgradeTab}
-        levels={game.upgrades}
-        lockReason={game.lockReason}
-        onBuyUpgrade={game.buyUpgrade}
+        toast={game?.toast ?? ''}
+        activeUpgradeTab={game?.activeUpgradeTab}
+        onUpgradeTab={game?.setActiveUpgradeTab}
+        levels={game?.upgrades ?? {}}
+        lockReason={game?.lockReason}
+        onBuyUpgrade={game?.buyUpgrade}
       />
+
       {loading ? <WorldLoadingScreen world="skybase" progress={95} asset="Scene Stabilization" tip={skybaseTips[0]} /> : null}
     </View>
   );

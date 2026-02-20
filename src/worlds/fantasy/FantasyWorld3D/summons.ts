@@ -4,7 +4,7 @@ export type SummonUpgrades = {
   aggroRadius: number;      // how far it can "see" enemies
   exploreRadius: number;    // how far it may wander from player
   followTightness: number;  // how strongly it prefers staying near player (0..1)
-  fireRate: number;         // shots per second
+  fireRate: number;         // casts per second
   projectileDamage: number; // damage per hit
 };
 
@@ -17,8 +17,13 @@ export type Summon = {
   mode: 'follow' | 'explore' | 'attack';
   targetEnemyId?: string;
 
-  // cooldown
-  shootCd: number;
+  // casting (for syncing animation + fireball)
+  castCd: number;            // cooldown between casts
+  casting: boolean;          // currently in cast windup
+  castT: number;             // time into current cast
+  castWindup: number;        // seconds until fireball spawns
+  castSpell: 1 | 2 | 3;      // which spell anim to play
+  castTargetId?: string;     // who we are casting at
 };
 
 export type EnemyLite = {
@@ -74,10 +79,15 @@ function norm(a: Vec3): Vec3 {
   return { x: a.x / l, y: a.y / l, z: a.z / l };
 }
 
-// tiny deterministic PRNG (good enough for wandering)
+// tiny deterministic PRNG (good enough for wandering + spell selection)
 function rand01(state: SummonsState) {
   state.seed = (state.seed * 1664525 + 1013904223) >>> 0;
   return (state.seed & 0xffffffff) / 0x100000000;
+}
+
+function randSpell(state: SummonsState): 1 | 2 | 3 {
+  const r = rand01(state);
+  return (r < 0.3333 ? 1 : (r < 0.6666 ? 2 : 3));
 }
 
 export function createSummonsState(opts?: Partial<SummonsState>): SummonsState {
@@ -96,7 +106,14 @@ export function spawnDefaultSummonNearPlayer(state: SummonsState, playerPos: Vec
     pos: { x: playerPos.x + 0.6, y: playerPos.y, z: playerPos.z + 0.6 },
     vel: { x: 0, y: 0, z: 0 },
     mode: 'follow',
-    shootCd: 0,
+    targetEnemyId: undefined,
+
+    castCd: 0,
+    casting: false,
+    castT: 0,
+    castWindup: 0.45,   // ~end of cast anim => fireball spawn
+    castSpell: 1,
+    castTargetId: undefined,
   });
 }
 
@@ -105,8 +122,14 @@ export type SummonsStepContext = {
   playerPos: Vec3;
   enemies: EnemyLite[];
 
-  // called when summon fires at an enemy
-  onSummonHitEnemy?: (enemyId: string, damage: number) => void;
+  // called when the cast windup finishes (spawn a fireball at `from` towards enemy)
+  onSummonFire?: (args: {
+    summonId: string;
+    from: Vec3;
+    enemyId: string;
+    damage: number;
+    spell: 1 | 2 | 3;
+  }) => void;
 };
 
 export function stepSummons(state: SummonsState, ctx: SummonsStepContext) {
@@ -118,7 +141,38 @@ export function stepSummons(state: SummonsState, ctx: SummonsStepContext) {
 
   for (const s of state.summons) {
     // cooldown tick
-    s.shootCd = Math.max(0, s.shootCd - dt);
+    s.castCd = Math.max(0, s.castCd - dt);
+
+    // if we're mid-cast, advance timer and fire at windup end
+    if (s.casting) {
+      s.castT += dt;
+
+      // keep facing / target while casting
+      if (s.castTargetId) {
+        const enemy = enemies.find((e) => e.id === s.castTargetId && e.alive);
+        if (!enemy) {
+          s.casting = false;
+          s.castT = 0;
+          s.castTargetId = undefined;
+        }
+      }
+
+      if (s.casting && s.castTargetId && s.castT >= s.castWindup) {
+        const enemy = enemies.find((e) => e.id === s.castTargetId && e.alive);
+        if (enemy) {
+          ctx.onSummonFire?.({
+            summonId: s.id,
+            from: { ...s.pos },
+            enemyId: enemy.id,
+            damage: up.projectileDamage,
+            spell: s.castSpell,
+          });
+        }
+        s.casting = false;
+        s.castT = 0;
+        s.castTargetId = undefined;
+      }
+    }
 
     // find closest valid enemy within aggro
     let bestId: string | undefined;
@@ -138,7 +192,6 @@ export function stepSummons(state: SummonsState, ctx: SummonsStepContext) {
       s.targetEnemyId = bestId;
     } else {
       s.targetEnemyId = undefined;
-      // wander a little, but mostly stay near player
       const d2p = dist2(s.pos, playerPos);
       const wantsExplore = rand01(state) < 0.15; // occasional exploration
       s.mode = wantsExplore && d2p < exploreR2 ? 'explore' : 'follow';
@@ -152,21 +205,19 @@ export function stepSummons(state: SummonsState, ctx: SummonsStepContext) {
       if (enemy) targetPos = enemy.pos;
       else s.mode = 'follow';
     } else if (s.mode === 'explore') {
-      // pick a point around the player (very small drift each tick)
       const ang = rand01(state) * Math.PI * 2;
       const r = clamp(rand01(state) * up.exploreRadius, 0.5, up.exploreRadius);
       targetPos = { x: playerPos.x + Math.cos(ang) * r, y: playerPos.y, z: playerPos.z + Math.sin(ang) * r };
     } else {
-      // follow: stay slightly offset so it "orbits" you
       const orbitAng = rand01(state) * Math.PI * 2;
       targetPos = { x: playerPos.x + Math.cos(orbitAng) * 0.9, y: playerPos.y, z: playerPos.z + Math.sin(orbitAng) * 0.9 };
     }
 
-    // simple steering (no physics assumptions yet)
+    // simple steering
     const toTarget = sub(targetPos, s.pos);
     const dir = norm(toTarget);
 
-    // follow tightness maps to speed preference
+    // speed preference
     const baseSpeed = 2.2;
     const speed = baseSpeed * (0.6 + up.followTightness * 0.8);
 
@@ -174,15 +225,17 @@ export function stepSummons(state: SummonsState, ctx: SummonsStepContext) {
     s.vel = mul(dir, speed);
     s.pos = add(s.pos, mul(s.vel, dt));
 
-    // fire if attacking and cooldown ready
+    // cast start logic (attack + cooldown ready + not already casting)
     if (s.mode === 'attack' && s.targetEnemyId) {
       const enemy = enemies.find((e) => e.id === s.targetEnemyId && e.alive);
       if (enemy) {
-        const closeEnough = dist2(s.pos, enemy.pos) <= (up.aggroRadius * up.aggroRadius);
-        const canShoot = s.shootCd <= 0;
-        if (closeEnough && canShoot) {
-          s.shootCd = 1 / Math.max(0.1, up.fireRate);
-          ctx.onSummonHitEnemy?.(enemy.id, up.projectileDamage);
+        const canCast = (!s.casting) && (s.castCd <= 0);
+        if (canCast) {
+          s.castCd = 1 / Math.max(0.1, up.fireRate);
+          s.casting = true;
+          s.castT = 0;
+          s.castSpell = randSpell(state);
+          s.castTargetId = enemy.id;
         }
       }
     }
