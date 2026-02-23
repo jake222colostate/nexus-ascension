@@ -1,0 +1,102 @@
+import React, { useEffect, useMemo, useRef } from 'react';
+import { Text, View, StyleSheet } from 'react-native';
+import { useProgress, useTexture } from '@react-three/drei/native';
+import { preloadGLTFMeshopt } from './src/loading/meshoptSetup';
+
+type AssetDescriptor = { url: string };
+
+type Props = {
+  assets?: AssetDescriptor[];
+  lootUrl?: string;
+  preloadUrls?: string[];
+  onDone: () => void;
+  title?: string;
+  subtitle?: string;
+};
+
+function ext(url: string) {
+  const m = String(url).match(/\.([a-z0-9]+)(?:\?|#|$)/i);
+  return (m && m[1]) ? String(m[1]).toLowerCase() : '';
+}
+
+export default function FalloutLoaderOverlay(props: Props) {
+  const { progress, active } = useProgress();
+  const doneRef = useRef(false);
+  const startedRef = useRef(false);
+
+  const urls = useMemo(() => {
+    const out: string[] = [];
+    if (Array.isArray(props.assets)) {
+      for (const a of props.assets) {
+        if (a && typeof a.url === 'string' && a.url.trim()) out.push(a.url.trim());
+      }
+    }
+    if (typeof props.lootUrl === 'string' && props.lootUrl.trim()) out.push(props.lootUrl.trim());
+    if (Array.isArray(props.preloadUrls)) {
+      for (const u of props.preloadUrls) {
+        if (typeof u === 'string' && u.trim()) out.push(u.trim());
+      }
+    }
+    return Array.from(new Set(out));
+  }, [props.assets, props.lootUrl, props.preloadUrls]);
+
+  useEffect(() => {
+    doneRef.current = false;
+    startedRef.current = false;
+
+    if (!urls.length) {
+      doneRef.current = true;
+      props.onDone?.();
+      return;
+    }
+
+    startedRef.current = true;
+
+    for (const u of urls) {
+      const e = ext(u);
+      if (e === 'glb' || e === 'gltf') {
+        try { preloadGLTFMeshopt(u as any); } catch {}
+      } else if (e === 'png' || e === 'jpg' || e === 'jpeg' || e === 'webp') {
+        try { (useTexture as any).preload?.(u as any); } catch {}
+      }
+    }
+  }, [urls.join('|')]);
+
+  useEffect(() => {
+    if (!startedRef.current) return;
+    if (doneRef.current) return;
+
+    const p = Number(progress);
+    if (!active && p >= 99.9) {
+      doneRef.current = true;
+      props.onDone?.();
+    }
+  }, [progress, active]);
+
+  const pct = Math.max(0, Math.min(100, Math.round(Number(progress) || 0)));
+
+  return (
+    <View style={S.root} pointerEvents="auto">
+      <View style={S.center}>
+        <Text style={S.title}>{props.title ?? 'Loading…'}</Text>
+        <Text style={S.sub}>{props.subtitle ?? 'Preparing assets'}</Text>
+
+        <View style={S.barOuter}>
+          <View style={[S.barInner, { width: `${pct}%` }]} />
+        </View>
+
+        <Text style={S.pct}>{pct}%</Text>
+      </View>
+    </View>
+  );
+}
+
+const S = StyleSheet.create({
+  root: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: '#0a0f18', justifyContent: 'center', alignItems: 'center' },
+  center: { width: '86%' },
+  title: { color: '#fff', fontSize: 22, fontWeight: '900' },
+  sub: { color: '#cfcfcf', marginTop: 6, fontSize: 12, fontWeight: '700' },
+  barOuter: { height: 12, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.14)', overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)', marginTop: 18 },
+  barInner: { height: 12, backgroundColor: 'rgba(120,170,255,0.85)' },
+  pct: { color: '#fff', marginTop: 10, textAlign: 'right', fontWeight: '900' },
+});

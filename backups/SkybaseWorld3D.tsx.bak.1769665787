@@ -1,0 +1,287 @@
+import React, { Suspense, useMemo, useRef } from 'react';
+import { StyleSheet, View } from 'react-native';
+import { Canvas, useFrame } from '@react-three/fiber';
+import * as THREE from 'three';
+
+function clamp(v: number, a: number, b: number) { return Math.max(a, Math.min(b, v)); }
+
+const ZOOM_MIN = 16;
+const ZOOM_MAX = 90;
+
+
+
+
+const CAM_Y_BELOW = 6.0;const CAM_Y_ABOVE = 2.5;
+
+const MAX_METEORS = 18;
+const METEOR_SPAWN_R = 28;
+const METEOR_SPAWN_Y_MIN = 10;
+const METEOR_SPAWN_Y_MAX = 18;
+const METEOR_SPEED_MIN = 10;
+const METEOR_SPEED_MAX = 18;
+
+function Scene({
+  targetY,
+  camYRef,
+  yawRef,
+  pitchRef,
+  radiusRef,
+}: {
+  targetY: number;
+  camYRef: React.MutableRefObject<number>;
+  yawRef: React.MutableRefObject<number>;
+  pitchRef: React.MutableRefObject<number>;
+  radiusRef: React.MutableRefObject<number>;
+}) {
+  useFrame(({ camera }, dt) => {
+  const yaw = yawRef.current;
+  const pitch = pitchRef.current;
+  const r = radiusRef.current;
+  const ty = camYRef.current;
+    const cy = Math.cos(pitch);
+    const sy = Math.sin(pitch);
+
+    const x = Math.sin(yaw) * r * cy;
+    const z = Math.cos(yaw) * r * cy;
+    const y = targetY + 2.2 + sy * r * 0.55;
+
+    camera.position.set(x, y, z);
+    camera.lookAt(0, ty + 1.0, 0);
+
+      const im = meteorMesh.current as any;
+      if (im) {
+        meteorSpawnAcc.current += dt;
+        const spawnEvery = 0.55;
+
+        while (meteorSpawnAcc.current >= spawnEvery) {
+          meteorSpawnAcc.current -= spawnEvery;
+          const list = meteorsRef.current;
+          const slot = list.findIndex((m) => !m.active);
+          if (slot >= 0) {
+            const ang = Math.random() * Math.PI * 2;
+            const r0 = METEOR_SPAWN_R;
+            const x0 = Math.cos(ang) * r0;
+            const z0 = Math.sin(ang) * r0;
+            const y0 = targetY + (METEOR_SPAWN_Y_MIN + Math.random() * (METEOR_SPAWN_Y_MAX - METEOR_SPAWN_Y_MIN));
+
+            const tx = 0;
+            const tz = 0;
+            const ty2 = targetY + 1.0;
+
+            const dir = new THREE.Vector3(tx - x0, ty2 - y0, tz - z0);
+            const len = dir.length() || 1;
+            dir.multiplyScalar(1 / len);
+
+            const sp = METEOR_SPEED_MIN + Math.random() * (METEOR_SPEED_MAX - METEOR_SPEED_MIN);
+
+            list[slot].active = true;
+            list[slot].pos.set(x0, y0, z0);
+            list[slot].vel.copy(dir).multiplyScalar(sp);
+            list[slot].rot.set(Math.random() * 3.0, Math.random() * 3.0, Math.random() * 3.0);
+            list[slot].ttl = 6.0;
+          }
+        }
+
+        const list = meteorsRef.current;
+        for (let i = 0; i < list.length; i++) {
+          const m = list[i];
+
+          if (m.active) {
+            m.ttl -= dt;
+            m.pos.x += m.vel.x * dt;
+            m.pos.y += m.vel.y * dt;
+            m.pos.z += m.vel.z * dt;
+
+            const dxm = m.pos.x;
+            const dzm = m.pos.z;
+            const d2 = dxm * dxm + dzm * dzm;
+            if (m.ttl <= 0 || d2 < 2.0 * 2.0 || m.pos.y < targetY - 6) {
+              m.active = false;
+              m.pos.set(0, -999, 0);
+            }
+          }
+
+          meteorTmp.position.copy(m.pos);
+          meteorTmp.rotation.set(m.rot.x, m.rot.y, m.rot.z);
+          meteorTmp.updateMatrix();
+          im.setMatrixAt(i, meteorTmp.matrix);
+        }
+
+        im.instanceMatrix.needsUpdate = true;
+      }
+  });
+
+  const ground = useMemo(() => new THREE.CylinderGeometry(22, 22, 0.6, 48, 1, false), []);
+  const core = useMemo(() => new THREE.CylinderGeometry(0.7, 0.95, 6.0, 18, 1, false), []);
+  const ring = useMemo(() => new THREE.CylinderGeometry(15.5, 16.2, 0.55, 32, 1, false), []);
+  const pillar = useMemo(() => new THREE.CylinderGeometry(0.26, 0.26, 2.4, 12, 1, false), []);
+
+  const meteorGeo = useMemo(() => new THREE.IcosahedronGeometry(0.38, 0), []);
+  const meteorMat = useMemo(() => new THREE.MeshStandardMaterial({ color: "#ff8a2a", emissive: "#ff3b00", emissiveIntensity: 0.8, roughness: 0.7, metalness: 0.1 }), []);
+
+  const meteorMesh = useRef<THREE.InstancedMesh>(null as any);
+  const meteorsRef = useRef<{ active: boolean; pos: THREE.Vector3; vel: THREE.Vector3; rot: THREE.Vector3; ttl: number }[]>([]);
+  const meteorSpawnAcc = useRef(0);
+  const meteorTmp = useMemo(() => new THREE.Object3D(), []);
+
+  if (meteorsRef.current.length !== MAX_METEORS) {
+    meteorsRef.current = Array.from({ length: MAX_METEORS }).map(() => ({
+      active: false,
+      pos: new THREE.Vector3(0, -999, 0),
+      vel: new THREE.Vector3(0, 0, 0),
+      rot: new THREE.Vector3(0, 0, 0),
+      ttl: 0,
+    }));
+  }
+  const pad = useMemo(() => new THREE.CylinderGeometry(2.2, 2.8, 0.35, 22, 1, false), []);
+
+  const matMetal = useMemo(() => new THREE.MeshStandardMaterial({ color: '#6B7A93', metalness: 0.7, roughness: 0.35 }), []);
+  const matDark = useMemo(() => new THREE.MeshStandardMaterial({ color: '#1A2233', metalness: 0.25, roughness: 0.9 }), []);
+  const matGlow = useMemo(() => new THREE.MeshStandardMaterial({ color: '#2ED6FF', emissive: '#2ED6FF', emissiveIntensity: 0.7, metalness: 0.1, roughness: 0.6 }), []);
+
+  return (
+    <>
+      <ambientLight intensity={0.65} />
+      <directionalLight position={[12, 18, 8]} intensity={1.0} />
+      <fog attach="fog" args={['#0a0f18', 20, 140]} />
+
+      <mesh geometry={ground} material={matDark} position={[0, targetY - 0.5, 0]} />
+
+      <mesh geometry={core} material={matMetal} position={[0, targetY + 3.0, 0]} />
+      <mesh geometry={pad} material={matGlow} position={[0, targetY + 0.18, 0]} />
+
+      <mesh geometry={ring} material={matDark} position={[0, targetY + 0.25, 0]} />
+
+      {Array.from({ length: 10 }).map((_, i) => {
+        const a = (i / 10) * Math.PI * 2;
+        const rr = 15.9;
+        const x = Math.cos(a) * rr;
+        const z = Math.sin(a) * rr;
+        return (
+          <mesh key={i} geometry={pillar} material={matMetal} position={[x, targetY + 1.45, z]} />
+        );
+      })}
+        <instancedMesh ref={meteorMesh} args={[meteorGeo, meteorMat, MAX_METEORS]} />
+    </>
+  );
+}
+
+export default function SkybaseWorld3D(props: { layer: number; layerHeight: number }) {
+  const yawRef = useRef(0);
+  const pitchRef = useRef(-0.18);
+  const radiusRef = useRef(34.0);
+
+  const lookTouch = useRef<number | null>(null);
+  const lookState = useRef({ active: false, x: 0, y: 0 });
+
+  const pinchRef = useRef<{ active: boolean; lastDist: number; lastMidY: number }>({ active: false, lastDist: 0, lastMidY: 0 });  const baseY = props.layerHeight ?? 0;
+  const camYRef = useRef(baseY);
+
+  const targetY = baseY;
+
+  const handleTouches = (touches: any[]) => {
+    const ts = touches || [];
+
+    // 2 fingers: pinch = zoom, 2-finger drag = vertical pan (camera height). No yaw/pitch changes.
+      if (ts.length >= 2) {
+        const a = ts[0], b = ts[1];
+        const ax = a.pageX ?? a.locationX ?? 0;
+        const ay = a.pageY ?? a.locationY ?? 0;
+        const bx = b.pageX ?? b.locationX ?? 0;
+        const by = b.pageY ?? b.locationY ?? 0;
+
+        const dx = ax - bx;
+        const dy = ay - by;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const midY = (ay + by) * 0.5;
+
+        if (!pinchRef.current.active) {
+          pinchRef.current.active = true;
+          pinchRef.current.lastDist = dist;
+          pinchRef.current.lastMidY = midY;
+        } else {
+          const dd = dist - pinchRef.current.lastDist;
+          // pinch out (dist bigger) => zoom in (radius smaller)
+          radiusRef.current = clamp(radiusRef.current - dd * 0.09, ZOOM_MIN, ZOOM_MAX);
+          pinchRef.current.lastDist = dist;
+
+          const dmy = midY - pinchRef.current.lastMidY;
+          camYRef.current = clamp(camYRef.current - dmy * 0.02, baseY - CAM_Y_BELOW, baseY + CAM_Y_ABOVE);
+          pinchRef.current.lastMidY = midY;
+        }
+
+        lookTouch.current = null;
+        lookState.current.active = false;
+        return;
+      }
+
+      pinchRef.current.active = false;
+
+    // 1 finger: rotate ONLY (yaw/pitch). NO zoom.
+    if (ts.length === 1) {
+      const t = ts[0];
+      const id = t.identifier as number;
+      const x = t.pageX ?? t.locationX ?? 0;
+      const y = t.pageY ?? t.locationY ?? 0;
+
+      if (!lookState.current.active || lookTouch.current !== id) {
+        lookTouch.current = id;
+        lookState.current.active = true;
+        lookState.current.x = x;
+        lookState.current.y = y;
+        return;
+      }
+
+      const ddx = x - lookState.current.x;
+      const ddy = y - lookState.current.y;
+      lookState.current.x = x;
+      lookState.current.y = y;
+
+      yawRef.current += ddx * 0.0065;
+      pitchRef.current = clamp(pitchRef.current - ddy * 0.0030, -0.32, 0.75);
+      return;
+    }
+
+    lookTouch.current = null;
+    lookState.current.active = false;
+  };
+
+  const releaseTouches = (chs: any[]) => {
+    const changed = chs || [];
+    for (const t of changed) {
+      const id = t.identifier as number;
+      if (id === lookTouch.current) {
+        lookTouch.current = null;
+        lookState.current.active = false;
+      }
+    }
+  };
+
+  return (
+    <View
+      style={styles.root}
+        onStartShouldSetResponderCapture={() => true}
+        onMoveShouldSetResponderCapture={() => true}
+        onResponderGrant={(e) => handleTouches(e.nativeEvent.touches)}
+      onResponderMove={(e) => handleTouches(e.nativeEvent.touches)}
+      onResponderRelease={(e) => releaseTouches(e.nativeEvent.changedTouches)}
+      onResponderTerminate={(e) => releaseTouches(e.nativeEvent.changedTouches)}
+    >
+      <Canvas
+        style={styles.canvas}
+        gl={{ antialias: true }}
+        onCreated={({ gl }) => { try { (gl as any).setClearColor?.('#0a0f18', 1); } catch (e) {} }}
+        camera={{ position: [0, 6, 18], fov: 60 }}
+      >
+        <Suspense fallback={null}>
+          <Scene targetY={targetY} camYRef={camYRef} yawRef={yawRef} pitchRef={pitchRef} radiusRef={radiusRef} />
+        </Suspense>
+      </Canvas>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: '#0a0f18' },
+  canvas: { flex: 1 },
+});

@@ -1,0 +1,10 @@
+const { getDefaultConfig } = require('expo/metro-config');
+
+const config = getDefaultConfig(__dirname);
+
+// Allow common 3D/binary asset types
+config.resolver.assetExts = Array.from(
+  new Set([...(config.resolver.assetExts || []), 'glb', 'gltf', 'bin', 'ktx2'])
+);
+
+module.exports = config;

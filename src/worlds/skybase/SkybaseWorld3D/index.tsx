@@ -5,13 +5,14 @@ import { useTexture } from '@react-three/drei/native';
 import { StyleSheet, View } from 'react-native';
 import { Canvas, useFrame } from '@react-three/fiber/native';
 import * as THREE from 'three';
+import { WORLD_URIS } from '../../../assets/worldUris';
 
 function clamp(v: number, a: number, b: number) { return Math.max(a, Math.min(b, v)); }
 
 const ZOOM_MIN = 16;
 const ZOOM_MAX = 90;
 
-const SKYBOX_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/skybase_stage1_skybox.jpeg';
+const SKYBOX_URL = WORLD_URIS.skybase.skybox;
 
 function SkyboxAndFog() {
   const { scene } = useThree();

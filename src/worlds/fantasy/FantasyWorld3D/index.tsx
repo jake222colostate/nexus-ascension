@@ -1,11 +1,62 @@
+import { useGLTFMeshopt, preloadGLTFMeshopt } from "../../../loading/meshoptSetup";
 import React, {useEffect, useMemo, useRef, useState, Suspense, useCallback} from 'react';
 import { Asset } from 'expo-asset';
+import { WORLD_URIS } from '../../../assets/worldUris';
 import { MeshBVH, acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from "three-mesh-bvh";
 import { View, StyleSheet, useWindowDimensions} from 'react-native';
 import { Canvas, useFrame, useThree } from '@react-three/fiber/native';
-import { useGLTF, useProgress, Clone, useAnimations, useTexture } from '@react-three/drei/native';
+import { useProgress, Clone, useAnimations, useTexture } from '@react-three/drei/native';
 import * as THREE from 'three';
 import { SkeletonUtils } from 'three-stdlib';
+
+
+let __fireballTex: any = null;
+
+function makeFireballTexture(size = 64) {
+  const data = new Uint8Array(size * size * 4);
+  const cx = (size - 1) * 0.5;
+  const cy = (size - 1) * 0.5;
+  const rMax = size * 0.5;
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const dx = x - cx;
+      const dy = y - cy;
+      const r = Math.sqrt(dx * dx + dy * dy) / rMax;
+      const t = Math.max(0, 1 - r);
+
+      const core = Math.pow(t, 2.2);
+      const glow = Math.pow(t, 1.2);
+
+      const rr = Math.min(255, (40 + 215 * glow) | 0);
+      const gg = Math.min(255, (15 + 140 * core) | 0);
+      const bb = Math.min(255, (10 + 60 * core) | 0);
+      const aa = Math.min(255, (255 * Math.pow(t, 1.8)) | 0);
+
+      const idx = (y * size + x) * 4;
+      data[idx + 0] = rr;
+      data[idx + 1] = gg;
+      data[idx + 2] = bb;
+      data[idx + 3] = aa;
+    }
+  }
+
+  const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+  tex.needsUpdate = true;
+  tex.magFilter = THREE.LinearFilter;
+  tex.minFilter = THREE.LinearMipMapLinearFilter;
+  tex.generateMipmaps = true;
+  tex.wrapS = THREE.ClampToEdgeWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  return tex;
+}
+
+function getFireballTexture() {
+  if (__fireballTex) return __fireballTex;
+  __fireballTex = makeFireballTexture(64);
+  return __fireballTex;
+}
+
 
 type FantasyWorld3DProps = {
   shootPulse: number;
@@ -22,6 +73,42 @@ type FantasyWorld3DProps = {
 (THREE.Mesh as any).prototype.raycast = acceleratedRaycast;
 
 
+
+const __bvhGeomSeen: any = typeof WeakSet !== 'undefined' ? new WeakSet() : null;
+
+function ensureBVHForObject(obj: any) {
+  if (!obj || typeof obj.traverse !== 'function') return () => {};
+  let cancelled = false;
+  const meshes: any[] = [];
+  try {
+    obj.traverse((m: any) => {
+      if (m?.isMesh && m.geometry) meshes.push(m);
+    });
+  } catch {}
+
+  let i = 0;
+  const CHUNK = 8;
+
+  const step = () => {
+    if (cancelled) return;
+    const end = Math.min(meshes.length, i + CHUNK);
+    for (; i < end; i++) {
+      try {
+        const g: any = meshes[i]?.geometry;
+        if (!g) continue;
+        if (__bvhGeomSeen && __bvhGeomSeen.has(g)) continue;
+        if (__bvhGeomSeen) __bvhGeomSeen.add(g);
+        if (!g.boundsTree) g.boundsTree = new MeshBVH(g);
+      } catch {}
+    }
+    if (i < meshes.length) {
+      try { requestAnimationFrame(step); } catch { setTimeout(step, 0); }
+    }
+  };
+
+  try { requestAnimationFrame(step); } catch { setTimeout(step, 0); }
+  return () => { cancelled = true; };
+}
 type EnemyKind = 'enemy' | 'boss';
 type EnemyAnim = 'walk' | 'run' | 'attack';
 type Enemy = { id: string; kind: EnemyKind; runner: boolean; baseSpd: number; aggro: boolean; wanderYaw: number; wanderT: number; pos: THREE.Vector3; hp: number; maxHp: number; spd: number; anim: EnemyAnim; ry: number; atkCd: number };
@@ -59,53 +146,45 @@ const SHOW_GAZEBO_MESH = true;
 const USE_GAZEBO_BVH = false;
 
 
-const MOUNTAIN_URL = Asset.fromModule(require("../../../../assets/glb/fantasy3d/mountain_v2.glb")).uri;
+const MOUNTAIN_URL = WORLD_URIS.fantasy.mountain;
 
-const GAZEBO_URL = Asset.fromModule(require("../../../../assets/glb/fantasy3d/spawn_gazebo.glb")).uri;
-const PATH_GLB_URL = Asset.fromModule(require("../../../../assets/glb/fantasy3d/path.glb")).uri;
+const GAZEBO_URL = WORLD_URIS.fantasy.gazebo;
+const PATH_GLB_URL = WORLD_URIS.fantasy.path;
 const PATH_DEBUG_VER = "v2";
-const PODIUM_URL = Asset.fromModule(require("../../../../assets/glb/fantasy3d/podium_v1.glb")).uri;
-  const SKYBOX_URL = 'https://sosfewysdevfgksvfbkf.supabase.co/storage/v1/object/public/game-assets/skybox1.jpg';
-const FOREST_TREE_URL = Asset.fromModule(require("../../../../assets/glb/fantasy3d/forest_tree.glb")).uri;
+const PODIUM_URL = WORLD_URIS.fantasy.podium;
+  const SKYBOX_URL = WORLD_URIS.fantasy.fantasySkybox;
+const FOREST_TREE_URL = WORLD_URIS.fantasy.forestTree;
 
-const CRYSTAL1_URL = Asset.fromModule(require("../../../../assets/glb/fantasy3d/Crystals/crystal1.glb")).uri;
-const CRYSTAL2_URL = Asset.fromModule(require("../../../../assets/glb/fantasy3d/Crystals/crystal2.glb")).uri;
-const CRYSTAL3_URL = Asset.fromModule(require("../../../../assets/glb/fantasy3d/Crystals/crystal3.glb")).uri;
-const CRYSTAL4_URL = Asset.fromModule(require("../../../../assets/glb/fantasy3d/Crystals/crystal4.glb")).uri;
-const CRYSTAL5_URL = Asset.fromModule(require("../../../../assets/glb/fantasy3d/Crystals/crystal5.glb")).uri;
+const CRYSTAL1_URL = WORLD_URIS.fantasy.crystal1;
+const CRYSTAL2_URL = WORLD_URIS.fantasy.crystal2;
+const CRYSTAL3_URL = WORLD_URIS.fantasy.crystal3;
+const CRYSTAL4_URL = WORLD_URIS.fantasy.crystal4;
+const CRYSTAL5_URL = WORLD_URIS.fantasy.crystal5;
 
-const MONSTER1_WALK_URL = Asset.fromModule(require("../../../../assets/glb/fantasy3d/monster1/monster1_walking.glb")).uri;
-const MONSTER1_RUN_URL = Asset.fromModule(require("../../../../assets/glb/fantasy3d/monster1/monster1_running.glb")).uri;
-const MONSTER1_ATTACK_URL = Asset.fromModule(require("../../../../assets/glb/fantasy3d/monster1/monster1_attack_v1.glb")).uri;
+const MONSTER1_WALK_URL = WORLD_URIS.fantasy.monsterWalk;
+const MONSTER1_RUN_URL = WORLD_URIS.fantasy.monsterRun;
+const MONSTER1_ATTACK_URL = WORLD_URIS.fantasy.monsterAttack;
 
-const MONSTER1_MODEL_URL = Asset.fromModule(require("../../../../assets/glb/fantasy3d/monster1/monster1_model.glb")).uri;
+const MONSTER1_MODEL_URL = WORLD_URIS.fantasy.monsterModel;
 
-const FOREST_FOREST_TREE_URL = Asset.fromModule(require("../../../../assets/glb/fantasy3d/forest_tree.glb")).uri;
+const FOREST_FOREST_TREE_URL = WORLD_URIS.fantasy.forestTree;
 
 function MountainGLB(props: { position: [number, number, number]; scale?: number | [number, number, number]; rotationY?: number }) {
-  const { scene } = useGLTF(MOUNTAIN_URL);
+  const { scene } = useGLTFMeshopt(MOUNTAIN_URL);
 
-  const obj = useMemo<THREE.Object3D>(() => {
-    const clone = scene.clone(true);
-    clone.traverse((m: any) => {
-      if (!m?.isMesh || !m.geometry) return;
-      const g: any = m.geometry;
-      if (!g.boundsTree) {
-        g.boundsTree = new MeshBVH(g);
-      }
-    });
-    return clone;
+  useEffect(() => {
+    try { return ensureBVHForObject(scene); } catch { return () => {}; }
   }, [scene]);
 
   return (
-      <group
-        position={props.position}
-        rotation={[0, props.rotationY ?? 0, 0]}
-        scale={props.scale ?? 1}
-      >
-        <primitive object={obj} position={[0, 0, 0]} />
-      </group>
-    );
+    <group
+      position={props.position}
+      rotation={[0, props.rotationY ?? 0, 0]}
+      scale={props.scale ?? 1}
+    >
+      <Clone object={scene} />
+    </group>
+  );
 }
   function SkyboxAndFog() {
     const { scene } = useThree();
@@ -138,26 +217,18 @@ function MountainGLB(props: { position: [number, number, number]; scale?: number
 
 
 function GazeboGLBLoaded(props: { uri: string; position: [number, number, number]; scale?: number; rotationY?: number }) {
-  const gltf: any = useGLTF(props.uri as any);
-  const [obj, setObj] = useState<THREE.Object3D | null>(null);
+  const gltf: any = useGLTFMeshopt(props.uri as any);
+  const root: any = (gltf?.scene || gltf);
 
-  useEffect(() => {
-    try {
-      const root = gltf?.scene || gltf;
-      if (!root) return;
-      const c = root.clone(true);
-      setObj(c);
-    } catch {}
-  }, [gltf]);
-
-  if (!obj) return null;
+  if (!root) return null;
   return (
-    <primitive
-      object={obj}
+    <group
       position={props.position}
       scale={props.scale ?? 1}
       rotation={[0, props.rotationY ?? 0, 0]}
-    />
+    >
+      <Clone object={root} />
+    </group>
   );
 }
 
@@ -172,7 +243,7 @@ function GazeboGLB(props: { position: [number, number, number]; scale?: number; 
 }
 
 function PodiumGLB(props: { position: [number, number, number]; scale?: number | [number, number, number]; rotationY?: number }) {
-  const { scene } = useGLTF(PODIUM_URL);
+  const { scene } = useGLTFMeshopt(PODIUM_URL);
 
   return (
     <group position={props.position} scale={props.scale || 1.0} rotation={[0, props.rotationY || 0, 0]}>
@@ -181,80 +252,71 @@ function PodiumGLB(props: { position: [number, number, number]; scale?: number |
   );
 }
   function PathGLB(props: {
-    position: [number, number, number];
-    scale?: number | [number, number, number];
-    rotationY?: number;
-    targetW?: number; // desired X size in world units
-    targetL?: number; // desired Z size in world units
-  }) {
-    const { scene } = useGLTF(PATH_GLB_URL);
+  position: [number, number, number];
+  scale?: number | [number, number, number];
+  rotationY?: number;
+  targetW?: number; // desired X size in world units
+  targetL?: number; // desired Z size in world units
+}) {
+  const { scene } = useGLTFMeshopt(PATH_GLB_URL);
 
-    const memo = useMemo(() => {
-      const clone: any = scene.clone(true);
-      const size = new THREE.Vector3(1, 1, 1);
-      try {
-        const box = new THREE.Box3().setFromObject(clone);
-        box.getSize(size);
-        if (!isFinite(size.x) || size.x <= 1e-6) size.x = 1;
-        if (!isFinite(size.y) || size.y <= 1e-6) size.y = 1;
-        if (!isFinite(size.z) || size.z <= 1e-6) size.z = 1;
-      } catch {}
-      return { obj: clone as THREE.Object3D, size };
-    }, [scene]);
+  const size = useMemo(() => {
+    const v = new THREE.Vector3(1, 1, 1);
+    try {
+      const box = new THREE.Box3().setFromObject(scene);
+      box.getSize(v);
+      if (!isFinite(v.x) || v.x <= 1e-6) v.x = 1;
+      if (!isFinite(v.y) || v.y <= 1e-6) v.y = 1;
+      if (!isFinite(v.z) || v.z <= 1e-6) v.z = 1;
+    } catch {}
+    return v;
+  }, [scene]);
 
-    const base = props.scale ?? 1;
+  const base = props.scale ?? 1;
 
-    const bx = memo.size.x || 1;
-    const bz = memo.size.z || 1;
+  const bx = (size.x || 1);
+  const bz = (size.z || 1);
 
-    const tw = props.targetW ?? bx;
-    const tl = props.targetL ?? bz;
+  const tw = props.targetW ?? bx;
+  const tl = props.targetL ?? bz;
 
-    const sx = tw / bx;
-    const sz = tl / bz;
-    const sy = (sx + sz) * 0.5;
+  const sx = tw / bx;
+  const sz = tl / bz;
+  const sy = (sx + sz) * 0.5;
 
-    let scale: any;
-    if (typeof base === 'number') scale = [sx * base, sy * base, sz * base];
-    else scale = [sx * base[0], sy * base[1], sz * base[2]];
+  let scale: any;
+  if (typeof base === 'number') scale = [sx * base, sy * base, sz * base];
+  else scale = [sx * base[0], sy * base[1], sz * base[2]];
 
-    return (
-      <primitive
-        object={memo.obj}
-        position={props.position}
-        scale={scale}
-        rotation={[0, props.rotationY ?? 0, 0]}
-      />
-    );
-  }
-
+  return (
+    <group position={props.position} scale={scale} rotation={[0, props.rotationY ?? 0, 0]}>
+      <Clone object={scene} />
+    </group>
+  );
+}
 
 
 function ForestTreeGLB(props: { position: [number, number, number]; scale?: number; rotationY?: number }) {
-  const { scene } = useGLTF(FOREST_FOREST_TREE_URL);
+  const { scene } = useGLTFMeshopt(FOREST_FOREST_TREE_URL);
 
-  const memo = useMemo(() => {
-    const c: any = scene.clone(true);
-    let minY = 0;
+  const minY = useMemo(() => {
+    let y = 0;
     try {
-      const box = new THREE.Box3().setFromObject(c);
+      const box = new THREE.Box3().setFromObject(scene);
       const v = box?.min?.y;
-      if (typeof v === 'number' && isFinite(v)) minY = v;
+      if (typeof v === 'number' && isFinite(v)) y = v;
     } catch {}
-    return { obj: c as THREE.Object3D, minY };
+    return y;
   }, [scene]);
 
   const s = (props.scale ?? 1);
   const sy = (typeof s === 'number') ? s : 1;
-  const y = props.position[1] - (memo.minY * sy);
+  const y = props.position[1] - (minY * sy);
 
   return (
-    <primitive
-      object={memo.obj}
-      position={[props.position[0], y, props.position[2]]}
-      scale={s}
-      rotation={[0, props.rotationY ?? 0, 0]}
-    />
+    <group position={[props.position[0], y, props.position[2]]} scale={s} rotation={[0, props.rotationY ?? 0, 0]}>
+      <Clone object={scene} />
+    </group>
   );
 }
 function clamp(v: number, lo: number, hi: number) { return Math.max(lo, Math.min(hi, v)); }
@@ -418,9 +480,9 @@ function resolveSphereMeshBVH(
   function Monster1GLB(props: { position: [number, number, number]; scale?: number; rotationY?: number; anim: EnemyAnim }) {
   const ref = useRef<THREE.Group>(null);
 
-  const walkG: any = useGLTF(MONSTER1_WALK_URL as any);
-  const runG: any = useGLTF(MONSTER1_RUN_URL as any);
-  const atkG: any = useGLTF(MONSTER1_ATTACK_URL as any);
+  const walkG: any = useGLTFMeshopt(MONSTER1_WALK_URL as any);
+  const runG: any = useGLTFMeshopt(MONSTER1_RUN_URL as any);
+  const atkG: any = useGLTFMeshopt(MONSTER1_ATTACK_URL as any);
 
   const baseScene: any =
     (walkG && walkG.scene) ? walkG.scene :
@@ -429,13 +491,12 @@ function resolveSphereMeshBVH(
   const obj = useMemo<any>(() => {
     if (!baseScene) return null;
     const c: any = SkeletonUtils.clone(baseScene);
-    c.traverse((m: any) => {
-      if (!m?.isMesh || !m.geometry) return;
-      const g: any = m.geometry;
-      if (!g.boundsTree) g.boundsTree = new MeshBVH(g);
-    });
     return c;
   }, [baseScene]);
+
+  useEffect(() => {
+    try { return ensureBVHForObject(obj); } catch { return () => {}; }
+  }, [obj]);
 
   const clips = useMemo<THREE.AnimationClip[]>(() => {
     const out: THREE.AnimationClip[] = [];
@@ -573,18 +634,6 @@ function Chunk(props: { idx: number; centerZ: number; showGazebo?: boolean; onMo
       const gz = (props.idx === 0 && !!props.showGazebo) ? gazeboRef.current : null;if (roots.length) {
         props.onMountains?.(props.idx, roots);
                 if (false) console.log('[BVH] registerChunk', { idx: props.idx, roots: roots.length });
-        try {
-          const boxes = roots.map((r) => {
-            const b = new THREE.Box3().setFromObject(r);
-            return {
-              min: [Number(b.min.x.toFixed(2)), Number(b.min.y.toFixed(2)), Number(b.min.z.toFixed(2))],
-              max: [Number(b.max.x.toFixed(2)), Number(b.max.y.toFixed(2)), Number(b.max.z.toFixed(2))],
-            };
-          });
-          if (true) console.log('[BVH] mountainBox', { idx: props.idx, boxes });
-        } catch (e) {
-          console.log('[BVH] mountainBox error', String(e));
-        }
 
         return;
       }
@@ -684,7 +733,8 @@ return (
 }
 
 function Scene(props: {
-  walking: boolean;
+    onReady?: () => void;
+walking: boolean;
   moveRef: React.MutableRefObject<{ x: number; y: number }>;
   yawRef: React.MutableRefObject<number>;
   pitchRef: React.MutableRefObject<number>;
@@ -727,11 +777,35 @@ const onMountains = useCallback((idx: number, roots: any[]) => {
     const simAcc = useRef(0);
     const moveVelRef = useRef({ x: 0, y: 0 });
   const hadRuntimeErr = useRef(false);
-        const spawnFixRef = useRef(120);
+    const didReadyRef = useRef(false);
+const spawnFixRef = useRef(120);
 const lastMountainCountRef = useRef(-1);
 
   const [chunkTick, setChunkTick] = useState(0);
   const baseChunkRef = useRef(0);
+  const lastPrefetchChunkRef = useRef<number | null>(null);
+
+
+  useEffect(() => {
+    // Prefetch next chunk assets (request-only), keeps visuals smooth without rendering far.
+    const bc = baseChunkRef.current;
+    if (lastPrefetchChunkRef.current === bc) return;
+    lastPrefetchChunkRef.current = bc;
+
+    const urls = [
+      PATH_GLB_URL,
+      FOREST_FOREST_TREE_URL,
+    ].filter(Boolean) as any[];
+
+    const t = setTimeout(() => {
+      try {
+        for (const u of (urls as any[])) { if (u) preloadGLTFMeshopt(u as any); }
+      } catch (e) {}
+    }, 50);
+
+    return () => clearTimeout(t);
+  }, [chunkTick]);
+
 
   const [projectiles, setProjectiles] = useState<Projectile[]>([]);
   const projRef = useRef<Projectile[]>([]);
@@ -1112,7 +1186,6 @@ spawnT.current += stepDt;
 
   const chunks = useMemo(() => Array.from({ length: CHUNK_BACK + CHUNK_AHEAD + 1 }, (_, i) => i - CHUNK_BACK), []);
   const baseChunk = baseChunkRef.current;
-    const didReadyRef = useRef(false);
 
   const fogColor = '#bfefff';
 
@@ -1135,7 +1208,7 @@ spawnT.current += stepDt;
       {chunks.map((i) => {
         const chunkIdx = baseChunk + i;
         const centerZ = -(chunkIdx * CHUNK_LEN) - (CHUNK_LEN / 2);
-          if (!didReadyRef.current && chunkIdx === baseChunk) { didReadyRef.current = true; FANTASY_ON_READY_REF.current?.(); }
+          if (!didReadyRef.current && chunkIdx === baseChunk) { didReadyRef.current = true; props.onReady?.(); }
         return <Chunk key={`c_${chunkIdx}`} idx={chunkIdx} centerZ={centerZ} showGazebo={showGazebo} onMountains={onMountains} onTrees={onTrees} />;
       })}
 
@@ -1210,11 +1283,15 @@ spawnT.current += stepDt;
       ))}
 
       {projectiles.map((pr) => (
-        <mesh key={pr.id} position={[pr.pos.x, pr.pos.y, pr.pos.z]}>
-          <sphereGeometry args={[0.14, 12, 12]} />
-          <meshStandardMaterial color={'#ffffff'} />
-        </mesh>
-      ))}
+          <sprite key={pr.id} position={[pr.pos.x, pr.pos.y, pr.pos.z]} scale={[0.9, 0.9, 0.9]}>
+            <spriteMaterial
+              map={getFireballTexture()}
+              transparent
+              depthWrite={false}
+              blending={THREE.AdditiveBlending as any}
+            />
+          </sprite>
+        ))}
     </>
   );
 }
@@ -1384,7 +1461,7 @@ function FantasyWorld3D(props: {
       <Canvas
         style={{ flex: 1 }}
         gl={{ antialias: false, powerPreference: 'low-power' }}
-        onCreated={({ gl }) => { try { (gl as any).setClearColor?.('#0a0f18', 1); } catch (e) {} }}
+        onCreated={({ gl }) => { try { (gl as any).setClearColor?.("#0a0f18", 1); } catch (e) {} }}
         camera={{ position: [0, 1.55, 0], fov: 65 }}
       >
         <Suspense fallback={null}>
@@ -1392,6 +1469,7 @@ function FantasyWorld3D(props: {
 
                     <CrystalField count={60} seed={20260220} centerZ={-40} spreadX={120} spreadZ={380} minY={22} maxY={80} />
 <Scene
+    onReady={props.onReady}
           walking={!!props.walking}
           moveRef={moveRef}
           yawRef={yawRef}
@@ -1449,7 +1527,7 @@ const styles = StyleSheet.create({
 export default FantasyWorld3D;
 
 /** Crystal Field (Fantasy sky decoration) **/
-const CRYSTAL_URLS: any[] = [CRYSTAL1_URL, CRYSTAL2_URL, CRYSTAL3_URL, CRYSTAL4_URL, CRYSTAL5_URL];
+const CRYSTAL_URLS: string[] = [CRYSTAL1_URL, CRYSTAL2_URL, CRYSTAL3_URL, CRYSTAL4_URL, CRYSTAL5_URL].filter(Boolean).map((u: any) => String(u));
 
 function CrystalGLB(props: {
   uri: string;
@@ -1459,7 +1537,8 @@ function CrystalGLB(props: {
   rotationX?: number;
   rotationZ?: number;
 }) {
-  const gltf: any = useGLTF(props.uri as any);
+  if (!props?.uri || !String(props.uri)) return null;
+  const gltf: any = useGLTFMeshopt(props.uri as any);
   return (
     <group
       position={props.position as any}

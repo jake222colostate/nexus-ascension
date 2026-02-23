@@ -1,0 +1,21 @@
+const { getDefaultConfig } = require('@expo/metro-config');
+const path = require('path');
+const { resolve } = require('metro-resolver');
+
+const config = getDefaultConfig(__dirname);
+
+config.resolver.resolveRequest = (context, moduleName, platform) => {
+  // Force a single Three.js instance everywhere
+  if (moduleName === 'three' || moduleName.startsWith('three/')) {
+    const pinned = path.resolve(__dirname, 'node_modules', moduleName);
+    return resolve(context, pinned, platform);
+  }
+  return resolve(context, moduleName, platform);
+};
+
+// Keep this ONLY if you never import from three/examples (you currently don't need it)
+config.resolver.blockList = [
+  /node_modules\/three\/examples\/.*/,
+];
+
+module.exports = config;

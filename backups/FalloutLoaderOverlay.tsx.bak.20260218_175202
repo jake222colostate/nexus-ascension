@@ -1,0 +1,90 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import { View, Text, StyleSheet } from 'react-native';
+import { useProgress } from '@react-three/drei/native';
+import { preloadGLTFMeshopt, useGLTFMeshopt } from './src/loading/meshoptSetup';
+
+type AssetDescriptor = { url: string };
+
+type Props = {
+  // New call-site (App.tsx): passes assets
+  assets?: AssetDescriptor[];
+
+  // Old call-site: passes explicit urls
+  lootUrl?: string;
+  preloadUrls?: string[];
+
+  onDone: () => void;
+  title?: string;
+  subtitle?: string;
+};
+
+function isUrl(s: any): s is string {
+  return typeof s === 'string' && s.trim().length > 0;
+}
+
+export default function FalloutLoaderOverlay(props: Props) {
+  const { active, progress } = useProgress();
+  const [ready, setReady] = useState(false);
+
+  const { lootUrl, preloadUrls } = useMemo(() => {
+    const fromAssets = Array.isArray(props.assets) ? props.assets.map(a => a?.url).filter(isUrl) : [];
+    const mergedPreloads = [
+      ...(Array.isArray(props.preloadUrls) ? props.preloadUrls.filter(isUrl) : []),
+      ...fromAssets,
+    ];
+
+    const resolvedLoot =
+      (isUrl(props.lootUrl) ? props.lootUrl : '') ||
+      (fromAssets.length > 0 ? fromAssets[0] : '');
+
+    return { lootUrl: resolvedLoot, preloadUrls: mergedPreloads };
+  }, [props.assets, props.lootUrl, props.preloadUrls]);
+
+  // Preload everything as early as possible
+  useEffect(() => {
+    try {
+      for (const u of preloadUrls) preloadGLTFMeshopt(u);
+    } catch {}
+  }, [preloadUrls]);
+
+  // Trigger a real load for the "loot" url (so meshopt is applied before parse)
+  // If there's no lootUrl, we just mark ready immediately.
+  const loot = lootUrl ? (useGLTFMeshopt(lootUrl as any) as any) : null;
+
+  useEffect(() => {
+    if (!lootUrl) {
+      setReady(true);
+      return;
+    }
+    // If useGLTFMeshopt returned something, we consider it load-attempted.
+    // Progress comes from drei's useProgress.
+    setReady(true);
+  }, [lootUrl, loot]);
+
+  useEffect(() => {
+    if (!active && ready) {
+      props.onDone();
+    }
+  }, [active, ready, props]);
+
+  return (
+    <View style={styles.root} pointerEvents="none">
+      <Text style={styles.title}>{props.title ?? 'Loading...'}</Text>
+      {!!props.subtitle && <Text style={styles.sub}>{props.subtitle}</Text>}
+      <Text style={styles.pct}>{Math.round(progress)}%</Text>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  root: {
+    position: 'absolute',
+    left: 0, right: 0, top: 0, bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(10,15,24,0.92)',
+  },
+  title: { color: '#fff', fontSize: 20, fontWeight: '900' },
+  sub: { color: '#cfcfcf', marginTop: 8, fontSize: 12, fontWeight: '700' },
+  pct: { color: '#fff', marginTop: 14, fontSize: 14, fontWeight: '900' },
+});

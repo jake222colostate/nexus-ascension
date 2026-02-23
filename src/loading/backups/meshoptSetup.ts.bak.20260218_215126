@@ -1,0 +1,27 @@
+import { useLoader } from '@react-three/fiber/native';
+import { GLTFLoader } from 'three-stdlib';
+import * as meshopt from 'meshoptimizer';
+
+// Support multiple meshoptimizer export shapes
+const MeshoptDecoder: any =
+  (meshopt as any).MeshoptDecoder ??
+  (meshopt as any).MeshoptDecoderModule ??
+  (meshopt as any).default ??
+  meshopt;
+
+function applyMeshoptDecoder(loader: any) {
+  try {
+    if (MeshoptDecoder && loader?.setMeshoptDecoder) loader.setMeshoptDecoder(MeshoptDecoder);
+  } catch {}
+}
+
+// Kept for compatibility with existing imports; no-op by design.
+export function ensureMeshoptDecoder() {}
+
+export function useGLTFMeshopt(url: any) {
+  return useLoader(GLTFLoader as any, url, (loader: any) => applyMeshoptDecoder(loader));
+}
+
+export function preloadGLTFMeshopt(url: any) {
+  (useLoader as any).preload(GLTFLoader as any, url, (loader: any) => applyMeshoptDecoder(loader));
+}

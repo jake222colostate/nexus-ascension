@@ -1,7 +1,10 @@
 import { useLoader } from '@react-three/fiber/native';
 import { useGLTF } from '@react-three/drei/native';
+import * as THREE from 'three';
 import { MeshoptDecoder } from 'meshoptimizer';
 import { MeshoptGLTFLoaderV2 } from './MeshoptGLTFLoaderV2';
+
+
 
 let didGlobal = false;
 let readyPromise: Promise<void> | null = null;

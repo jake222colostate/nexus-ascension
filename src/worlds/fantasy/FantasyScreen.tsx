@@ -30,8 +30,9 @@ export function FantasyScreen({ navigation, game }: any) {
           onReady={() => setLoading(false)}
         walking={walking}
         shootPulse={shootPulse}
-        bulletDmgEnemy={1}
-        bulletDmgBoss={2}
+        bulletDmgEnemy={Math.max(1, Math.round(1 * (game?.stats?.fantasyDamageMult ?? 1)))}
+          bulletDmgBoss={Math.max(2, Math.round(2 * (game?.stats?.fantasyDamageMult ?? 1)))}
+          
         onPodium={() => undefined}
         onMonument={() => undefined}
         onEnemyKilled={(kind) => {

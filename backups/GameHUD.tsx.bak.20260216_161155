@@ -1,0 +1,296 @@
+import React, { useMemo } from 'react';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+type HudButton =
+  | {
+      kind: 'press';
+      label: string;
+      onPress: () => void;
+      disabled?: boolean;
+    }
+  | {
+      kind: 'hold';
+      label: string;
+      activeLabel: string;
+      active: boolean;
+      onHoldStart: () => void;
+      onHoldEnd: () => void;
+      disabled?: boolean;
+    };
+
+type NavButton = { label: string; onPress: () => void };
+
+export default function GameHUD(props: {
+  title: string;
+  leftSub?: string;
+  rightLines?: string[];
+  navButtons?: NavButton[];
+  buttons?: HudButton[];
+  toast?: string;
+
+  onOpenUpgrades?: () => void;
+
+  upgradesOpen?: boolean;
+  onCloseUpgrades?: () => void;
+  upgradesTitle?: string;
+  upgradesBody?: React.ReactNode;
+}) {
+  const rightLines = props.rightLines ?? [];
+  const buttons = props.buttons ?? [];
+  const navButtons = props.navButtons ?? [];
+
+  const showUpgrades = !!props.upgradesOpen;
+  const upgradesTitle = props.upgradesTitle ?? 'Upgrades';
+  const hasUpgrades = !!props.onOpenUpgrades;
+
+  const topRight = useMemo(() => rightLines.slice(0, 3), [rightLines]);
+
+  return (
+    <SafeAreaView pointerEvents="box-none" style={styles.safe}>
+      {/* TOP BAR */}
+      <View pointerEvents="box-none" style={styles.topWrap}>
+        <View style={styles.topBar}>
+          <View style={styles.topLeft}>
+            <Text numberOfLines={1} style={styles.title}>{props.title}</Text>
+            {!!props.leftSub && <Text numberOfLines={1} style={styles.sub}>{props.leftSub}</Text>}
+          </View>
+
+          <View style={styles.topRight}>
+            {topRight.map((t, i) => (
+              <View key={i} style={styles.chip}>
+                <Text numberOfLines={1} style={styles.chipText}>{t}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+
+        {!!props.toast && (
+          <View style={styles.toastWrap}>
+            <Text style={styles.toastText}>{props.toast}</Text>
+          </View>
+        )}
+      </View>
+
+      {/* BOTTOM CONTROLS */}
+      <View pointerEvents="box-none" style={styles.bottomWrap}>
+        <View style={styles.bottomPanel}>
+          {/* NAV ROW */}
+          {(navButtons.length > 0 || hasUpgrades) && (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.navRow}
+            >
+              {navButtons.map((b, i) => (
+                <Pressable
+                  key={i}
+                  onPress={b.onPress}
+                  style={({ pressed }) => [styles.navBtn, pressed && styles.pressed]}
+                >
+                  <Text style={styles.navBtnText}>{b.label}</Text>
+                </Pressable>
+              ))}
+
+              {hasUpgrades && (
+                <Pressable
+                  onPress={props.onOpenUpgrades}
+                  style={({ pressed }) => [styles.upgradesBtn, pressed && styles.pressed]}
+                >
+                  <Text style={styles.upgradesBtnText}>Upgrades</Text>
+                </Pressable>
+              )}
+            </ScrollView>
+          )}
+
+          {/* ACTION ROW */}
+          {buttons.length > 0 && (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.actionRow}
+            >
+              {buttons.map((b, i) => {
+                if (b.kind === 'press') {
+                  return (
+                    <Pressable
+                      key={i}
+                      disabled={!!b.disabled}
+                      onPress={b.onPress}
+                      style={({ pressed }) => [
+                        styles.actionBtn,
+                        b.disabled && styles.disabled,
+                        pressed && styles.pressed,
+                      ]}
+                    >
+                      <Text style={styles.actionBtnText}>{b.label}</Text>
+                    </Pressable>
+                  );
+                }
+                return (
+                  <Pressable
+                    key={i}
+                    disabled={!!b.disabled}
+                    onPressIn={() => !b.disabled && b.onHoldStart()}
+                    onPressOut={() => !b.disabled && b.onHoldEnd()}
+                    style={({ pressed }) => [
+                      styles.actionBtn,
+                      b.active && styles.activeHold,
+                      b.disabled && styles.disabled,
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <Text style={styles.actionBtnText}>{b.active ? b.activeLabel : b.label}</Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          )}
+
+          {/* FALLBACK UPGRADES BUTTON (no nav + no actions) */}
+          {navButtons.length === 0 && buttons.length === 0 && hasUpgrades && (
+            <View style={{ marginTop: 8 }}>
+              <Pressable
+                onPress={props.onOpenUpgrades}
+                style={({ pressed }) => [styles.upgradesBtnSolo, pressed && styles.pressed]}
+              >
+                <Text style={styles.upgradesBtnText}>Upgrades</Text>
+              </Pressable>
+            </View>
+          )}
+        </View>
+      </View>
+
+      {/* UPGRADES MODAL */}
+      <Modal visible={showUpgrades} transparent animationType="fade" onRequestClose={props.onCloseUpgrades}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{upgradesTitle}</Text>
+              <Pressable onPress={props.onCloseUpgrades} style={({ pressed }) => [styles.closeBtn, pressed && styles.pressed]}>
+                <Text style={styles.closeBtnText}>Close</Text>
+              </Pressable>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalBody}>
+              {props.upgradesBody}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  safe: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+
+  topWrap: { position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: 12, paddingTop: 6 },
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 18,
+    backgroundColor: 'rgba(13, 18, 32, 0.78)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+  },
+  topLeft: { flex: 1, paddingRight: 10 },
+  title: { color: '#FFFFFF', fontSize: 15, fontWeight: '900', letterSpacing: 0.2 },
+  sub: { color: '#B8C0D6', fontSize: 12, marginTop: 2, fontWeight: '700' },
+
+  topRight: { flexDirection: 'row', gap: 8, alignItems: 'center' },
+  chip: {
+    maxWidth: 150,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+  },
+  chipText: { color: '#D7E1FF', fontSize: 12, fontWeight: '800' },
+
+  toastWrap: {
+    marginTop: 8,
+    alignSelf: 'flex-start',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    backgroundColor: 'rgba(20, 28, 48, 0.78)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+  },
+  toastText: { color: '#D7E1FF', fontSize: 12, fontWeight: '800' },
+
+  bottomWrap: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 12, paddingBottom: 10 },
+  bottomPanel: {
+    padding: 10,
+    borderRadius: 20,
+    backgroundColor: 'rgba(13, 18, 32, 0.78)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+  },
+
+  navRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  navBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+  },
+  navBtnText: { color: '#D7E1FF', fontWeight: '900', fontSize: 12 },
+
+  upgradesBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    backgroundColor: 'rgba(91, 124, 255, 0.22)',
+    borderWidth: 1,
+    borderColor: 'rgba(91, 124, 255, 0.55)',
+  },
+  upgradesBtnSolo: {
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 16,
+    backgroundColor: 'rgba(91, 124, 255, 0.22)',
+    borderWidth: 1,
+    borderColor: 'rgba(91, 124, 255, 0.55)',
+    alignItems: 'center',
+  },
+  upgradesBtnText: { color: '#FFFFFF', fontWeight: '900', fontSize: 12 },
+
+  actionRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 },
+  actionBtn: {
+    minWidth: 132,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    alignItems: 'center',
+  },
+  actionBtnText: { color: '#FFFFFF', fontWeight: '900', fontSize: 12 },
+
+  pressed: { opacity: 0.85 },
+  disabled: { opacity: 0.5 },
+  activeHold: { backgroundColor: 'rgba(91, 124, 255, 0.22)', borderColor: 'rgba(91, 124, 255, 0.55)' },
+
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'center', padding: 16 },
+  modalCard: {
+    borderRadius: 18,
+    backgroundColor: '#0F1626',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+    overflow: 'hidden',
+    maxHeight: '85%',
+  },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, paddingVertical: 12, backgroundColor: 'rgba(255,255,255,0.03)' },
+  modalTitle: { color: '#FFFFFF', fontWeight: '900', fontSize: 14 },
+  closeBtn: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)' },
+  closeBtnText: { color: '#D7E1FF', fontWeight: '900', fontSize: 12 },
+  modalBody: { padding: 14 },
+});

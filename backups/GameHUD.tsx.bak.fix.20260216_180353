@@ -1,0 +1,131 @@
+import React, { ReactNode, useMemo } from 'react';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+
+type HudButton =
+  | { kind: 'press'; label: string; onPress: () => void }
+  | { kind: 'hold'; label: string; activeLabel: string; active: boolean; onHoldStart: () => void; onHoldEnd: () => void };
+
+export default function GameHUD(props: {
+  title: string;
+  leftSub?: string;
+  rightLines?: string[];
+  buttons?: HudButton[];
+  navButtons?: { label: string; onPress: () => void }[];
+
+  onOpenUpgrades?: () => void;
+
+  toast?: string;
+
+  upgradesOpen?: boolean;
+  onCloseUpgrades?: () => void;
+  upgradesTitle?: string;
+  upgradesBody?: ReactNode;
+}) {
+  const right = props.rightLines ?? [];
+  const buttons = props.buttons ?? [];
+  
+  const navButtons = props.navButtons ?? [];
+const nav = props.navButtons ?? [];
+
+  const hasUpgrades = !!props.onOpenUpgrades;
+  const hasToast = !!props.toast;
+
+  const topRight = useMemo(() => {
+    if (!right.length) return null;
+    return (
+      <View style={styles.rightStack}>
+        {right.slice(0, 3).map((t, i) => (
+          <View key={i} style={styles.chip}>
+            <Text style={styles.chipText} numberOfLines={1}>{t}</Text>
+          </View>
+        ))}
+      </View>
+    );
+  }, [right]);
+
+  return (
+    <>
+      <View pointerEvents="box-none" style={styles.root}>
+        <View style={styles.topRow} pointerEvents="box-none">
+          <View style={styles.leftStack}>
+            <View style={styles.titlePill}>
+              <Text style={styles.titleText} numberOfLines={1}>{props.title}</Text>
+            </View>
+            {!!props.leftSub && (
+              <View style={styles.subPill}>
+                <Text style={styles.subText} numberOfLines={1}>{props.leftSub}</Text>
+              </View>
+            )}
+          </View>
+
+          {topRight}
+        </View>
+
+        <View style={styles.bottomDock} pointerEvents="box-none">
+          <View style={styles.navRow}>
+            {nav.map((b, i) => (
+              <Pressable key={i} style={styles.navBtn} onPress={b.onPress}>
+                <Text style={styles.navText}>{b.label}</Text>
+              </Pressable>
+            ))}
+            {hasUpgrades && (
+              <Pressable style={[styles.navBtn, styles.upBtn]} onPress={props.onOpenUpgrades}>
+                <Text style={[styles.navText, styles.upText]}>Upgrades</Text>
+              </Pressable>
+            )}
+          </View>
+
+          <View style={styles.actionsRow}>
+            {buttons.slice(0, 3).map((b, i) => {
+              if (b.kind === 'press') {
+                return (
+                  <Pressable key={i} style={styles.actionBtn} onPress={b.onPress}>
+                    <Text style={styles.actionText} numberOfLines={1}>{b.label}</Text>
+                  </Pressable>
+                );
+              }
+              return (
+                <Pressable
+                  key={i}
+                  style={[styles.actionBtn, b.active ? styles.actionBtnActive : null]}
+                  onPressIn={b.onHoldStart}
+                  onPressOut={b.onHoldEnd}
+                >
+                  <Text style={styles.actionText} numberOfLines={1}>{b.active ? b.activeLabel : b.label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          {hasToast && (
+            <View style={styles.toastWrap} pointerEvents="none">
+              <Text style={styles.toastText} numberOfLines={2}>{props.toast}</Text>
+            </View>
+          )}
+        </View>
+      </View>
+
+      <Modal visible={!!props.upgradesOpen} transparent animationType="fade">
+        <View style={styles.modalBg}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{props.upgradesTitle ?? 'Upgrades'}</Text>
+              <Pressable style={styles.modalClose} onPress={props.onCloseUpgrades}>
+                <Text style={styles.modalCloseText}>Close</Text>
+              </Pressable>
+            </View>
+
+            <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled">
+              {props.upgradesBody}
+              <View style={{ height: 10 }} />
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    </>
+  );
+}
+
+const styles = StyleSheet.create({
+  
+});

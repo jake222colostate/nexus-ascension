@@ -1,7 +1,9 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import * as THREE from 'three';
 import { Text, View, StyleSheet } from 'react-native';
 import { useProgress } from '@react-three/drei/native';
-import { preloadGLTFMeshopt } from '../../loading/meshoptSetup';
+import { preloadGLTFMeshopt, ensureMeshoptDecoder } from '../../loading/meshoptSetup';
+import { MeshoptGLTFLoaderV2 } from '../../loading/MeshoptGLTFLoaderV2';
 
 type AssetDescriptor = { url: string };
 
@@ -19,6 +21,33 @@ type Props =
       title?: string;
       subtitle?: string;
     };
+
+
+async function preloadAllAssets(urls: string[]) {
+  ensureMeshoptDecoder();
+  const manager = THREE.DefaultLoadingManager;
+  const gltfLoader: any = new (MeshoptGLTFLoaderV2 as any)(manager);
+  const texLoader: any = new (THREE as any).TextureLoader(manager);
+
+  const tasks = urls.map(async (u) => {
+    const e = ext(u);
+    try {
+      if (e === 'glb' || e === 'gltf') {
+        const t0 = Date.now(); await gltfLoader.loadAsync(u); console.log('[LOADER] gltf', u, (Date.now()-t0)+'ms');
+        return;
+      }
+      if (e === 'jpg' || e === 'jpeg' || e === 'png' || e === 'webp') {
+        const t0 = Date.now(); await texLoader.loadAsync(u); console.log('[LOADER] tex', u, (Date.now()-t0)+'ms');
+        return;
+      }
+    } catch (e: any) {
+        // capture real loader error
+        throw e;
+      }
+  });
+
+  await Promise.all(tasks);
+}
 
 function ext(url?: string) {
   const s = String(url ?? '');
@@ -38,14 +67,38 @@ export default function FalloutLoaderOverlay(props: Props) {
     return list;
   }, [props]);
 
-  // Kick off preloads (GLB/GLTF via meshopt-aware loader)
+  // Kick off preloads (models + textures) and ONLY finish when they are actually loaded
+  const [preloaded, setPreloaded] = useState(false);
+  const [lastErr, setLastErr] = useState<string | null>(null);
+
   useEffect(() => {
-    for (const u of urls) {
-      const e = ext(u);
-      if (e === 'glb' || e === 'gltf') {
-        try { preloadGLTFMeshopt(u as any); } catch {}
+    let cancelled = false;
+
+    (async () => {
+      try {
+        // keep the old request-only preloads too (harmless + helps cache paths)
+        for (const u of urls) {
+          const e = ext(u);
+          if (e === 'glb' || e === 'gltf') {
+            try { preloadGLTFMeshopt(u as any); } catch {}
+          }
+        }
+
+        try {
+          await preloadAllAssets(urls);
+        } catch (e: any) {
+          const msg = String(e?.message ?? e ?? 'unknown error');
+          try { console.log('[LOADER_ERR]', msg); } catch {}
+            try { console.log('[LOADER_ERR_STACK]', String(e?.stack ?? '')); } catch {}
+          if (!cancelled) setLastErr(msg);
+        }
+        if (!cancelled) setPreloaded(true);
+      } catch {
+        if (!cancelled) setPreloaded(true);
       }
-    }
+    })();
+
+    return () => { cancelled = true; };
   }, [urls]);
 
   // drei progress tracks THREE.DefaultLoadingManager, which useLoader uses internally.
@@ -54,26 +107,14 @@ export default function FalloutLoaderOverlay(props: Props) {
   const fired = useRef(false);
   useEffect(() => {
     if (fired.current) return;
+    if (!preloaded) return;
 
-    // If nothing is actually queued, don't hang forever
-    if (!active && total === 0 && urls.length > 0) {
-      // still allow a moment for the queue to fill on first render
-      const t = setTimeout(() => {
-        if (!fired.current) {
-          fired.current = true;
-          props.onDone();
-        }
-      }, 600);
-      return () => clearTimeout(t);
-    }
-
-    if (!active && total > 0 && loaded >= total && progress >= 99.5) {
+    if (!active && (total === 0 || loaded >= total) && Number(progress || 0) >= 99) {
       fired.current = true;
       props.onDone();
     }
-  }, [active, progress, loaded, total, urls.length, props]);
-
-  const pct = Math.max(0, Math.min(100, Math.round(Number(progress || 0))));
+  }, [active, progress, loaded, total, preloaded, props]);
+const pct = Math.max(0, Math.min(100, Math.round(Number(progress || 0))));
   const title = (props as any).title ?? 'Loading world…';
   const subtitle = (props as any).subtitle ?? (item ? String(item) : 'Fetching assets');
 

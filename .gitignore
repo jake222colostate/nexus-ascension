@@ -1,76 +1,14 @@
-# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
-
-# dependencies
 node_modules/
-
-# Expo
 .expo/
+.expo-shared/
 dist/
-web-build/
-expo-env.d.ts
-
-# Native
-.kotlin/
-*.orig.*
-*.jks
-*.p8
-*.p12
-*.key
-*.mobileprovision
-
-# Metro
-.metro-health-check*
-
-# debug
-npm-debug.*
-yarn-debug.*
-yarn-error.*
-
-# macOS
+build/
+coverage/
 .DS_Store
-*.pem
-
-# local env files
-.env*.local
-
-# typescript
-*.tsbuildinfo
-
-# generated native folders
-/ios
-/android
-
-# --- Nexus Ascension local junk ---
-node_modules/
-.expo/
-assets/.ipynb_checkpoints/
-*.bak.*
-19
-backups/
-
-# local volume / persistence markers
-.PERSISTENCE_OK
-.VOLUME_WRITE_TEST
-
-# editor/backup junk
-*~
-*.bak
-*.backup
-*.orig
-*.old
-*.tmp
-*.save
-*.bkp
-*.swp
-*.swo
-*.swx
-.#*
-#*#
-*.rej
-
-# junk / noise
-.ipynb_checkpoints/
-.bak_noise/
-backups/
-*.bak
-513
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.env
+.env.*

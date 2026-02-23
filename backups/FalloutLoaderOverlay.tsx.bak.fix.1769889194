@@ -1,0 +1,149 @@
+import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, PanResponder, StyleSheet, Text, View } from 'react-native';
+import { Canvas, useFrame } from '@react-three/fiber/native';
+import { useGLTF, useProgress } from '@react-three/drei/native';
+
+function clamp(n: number, lo: number, hi: number) {
+  return Math.max(lo, Math.min(hi, n));
+}
+
+$1
+function Preload({ url }: { url: string }) {
+  useGLTF(url);
+  return null;
+}
+
+function Spinner({ rotYRef }: { rotYRef: React.MutableRefObject<number> }) {
+  const mesh = useRef<any>(null);
+  useFrame((_s, dt) => {
+    rotYRef.current += dt * 0.45;
+    if (mesh.current) mesh.current.rotation.y = rotYRef.current;
+  });
+  return (
+    <mesh ref={mesh}>
+      <boxGeometry args={[1.2, 1.2, 1.2]} />
+      <meshStandardMaterial />
+    </mesh>
+  );
+}
+
+export default function FalloutLoaderOverlay({
+  lootUrl,
+  preloadUrls = [],
+  onDone,
+  title = 'Loading…',
+  subtitle = 'Drag to rotate loot',
+}: {
+  lootUrl: string;
+  preloadUrls?: string[];
+  onDone?: () => void;
+  title?: string;
+  subtitle?: string;
+}) {
+  const { active, progress, total } = useProgress();
+
+  const opacity = useRef(new Animated.Value(1)).current;
+  const [doneCalled, setDoneCalled] = useState(false);
+
+  const pct = useMemo(() => {
+    const p = Number(progress || 0);
+    return Math.floor(clamp(p, 0, 100));
+  }, [progress]);
+
+  const shouldHold = useMemo(() => {
+    if (active) return true;
+    if (total > 0 && pct < 100) return true;
+    return false;
+  }, [active, total, pct]);
+
+  useEffect(() => {
+    if (shouldHold) {
+      Animated.timing(opacity, { toValue: 1, duration: 120, useNativeDriver: true }).start();
+      return;
+    }
+    if (!doneCalled && pct >= 100) {
+      Animated.timing(opacity, { toValue: 0, duration: 380, useNativeDriver: true }).start(({ finished }) => {
+        if (finished) {
+          setDoneCalled(true);
+          try { onDone?.(); } catch (e) {}
+        }
+      });
+    }
+  }, [shouldHold, pct, doneCalled, opacity, onDone]);
+
+  const rotYRef = useRef(0);
+
+  const pan = useMemo(() => {
+    let start = 0;
+    return PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => { start = rotYRef.current; },
+      onPanResponderMove: (_e, g) => { rotYRef.current = start + g.dx * 0.012; },
+    });
+  }, []);
+
+  return (
+    <Animated.View style={[styles.root, { opacity }]}>
+      <View style={styles.preview} {...pan.panHandlers}>
+        <Canvas gl={{ antialias: true }} camera={{ position: [0, 1.15, 3.25], fov: 45 }}>
+          <ambientLight intensity={0.7} />
+          <directionalLight position={[3, 6, 4]} intensity={1.1} />
+          <Suspense fallback={<Spinner rotYRef={rotYRef} />}>
+            <LootModel url={lootUrl} rotYRef={rotYRef} />
+          </Suspense>
+        </Canvas>
+
+        <View pointerEvents="none" style={styles.hudTop}>
+          <Text style={styles.title}>{title}</Text>
+          <Text style={styles.sub}>{subtitle}</Text>
+        </View>
+
+        <View pointerEvents="none" style={styles.hudBottom}>
+          <View style={styles.barOuter}>
+            <View style={[styles.barInner, { width: `${pct}%` }]} />
+          </View>
+          <Text style={styles.pct}>{pct}%</Text>
+        </View>
+      </View>
+    </Animated.View>
+  );
+}
+
+const styles = StyleSheet.create({
+  root: {
+    position: 'absolute',
+    left: 0, right: 0, top: 0, bottom: 0,
+    zIndex: 9999,
+    backgroundColor: '#0a0f18',
+  },
+  preview: { flex: 1, backgroundColor: '#0a0f18' },
+  hudTop: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    paddingTop: 64,
+    paddingHorizontal: 18,
+  },
+  title: { color: '#fff', fontSize: 18, fontWeight: '900' },
+  sub: { color: 'rgba(255,255,255,0.75)', marginTop: 6, fontSize: 12, fontWeight: '800' },
+  hudBottom: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingBottom: 34,
+    paddingHorizontal: 18,
+  },
+  barOuter: {
+    height: 10,
+    borderRadius: 999,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+  },
+  barInner: { height: 10, backgroundColor: 'rgba(91,124,255,0.90)' },
+  pct: { color: '#cfcfcf', marginTop: 10, fontWeight: '800' },
+});

@@ -1,0 +1,65 @@
+import React, { useEffect, useMemo } from 'react';
+import { View, Text, StyleSheet } from 'react-native';
+import { useProgress } from '@react-three/drei/native';
+import { preloadGLTFMeshopt } from './src/loading/meshoptSetup';
+
+export type AssetDescriptor = { url: string };
+
+type Props = {
+  assets?: AssetDescriptor[];
+  lootUrl?: string;
+  preloadUrls?: string[];
+  onDone: () => void;
+  title?: string;
+  subtitle?: string;
+};
+
+export default function FalloutLoaderOverlay(props: Props) {
+  const { assets, lootUrl, preloadUrls, onDone, title, subtitle } = props;
+
+  const computed = useMemo(() => {
+    const urlsFromAssets = Array.isArray(assets)
+      ? assets.map(a => (typeof a?.url === 'string' ? a.url : '')).filter(Boolean)
+      : [];
+
+    const list = Array.isArray(preloadUrls)
+      ? preloadUrls.filter(Boolean)
+      : urlsFromAssets;
+
+    const main = (typeof lootUrl === 'string' && lootUrl.trim())
+      ? lootUrl.trim()
+      : (list[0] ?? '');
+
+    const rest = list.filter(u => u && u !== main);
+    return { main, rest };
+  }, [assets, lootUrl, preloadUrls]);
+
+  useEffect(() => {
+    if (computed.main) preloadGLTFMeshopt(computed.main as any);
+    for (const u of computed.rest) preloadGLTFMeshopt(u as any);
+  }, [computed.main, computed.rest]);
+
+  const { active, progress } = useProgress();
+
+  useEffect(() => {
+    if (!active && progress >= 100) onDone();
+  }, [active, progress, onDone]);
+
+  return (
+    <View style={styles.root} pointerEvents="auto">
+      <Text style={styles.title}>{title ?? 'Loading world...'}</Text>
+      <Text style={styles.sub}>{subtitle ?? `${Math.floor(progress)}%`}</Text>
+      <View style={styles.barOuter}>
+        <View style={[styles.barInner, { width: `${Math.max(0, Math.min(100, progress))}%` }]} />
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  root: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0a0f18' },
+  title: { color: '#fff', fontSize: 20, fontWeight: '900' },
+  sub: { color: '#cfcfcf', marginTop: 8, fontSize: 12, fontWeight: '700' },
+  barOuter: { width: '76%', height: 12, marginTop: 16, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.14)', overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)' },
+  barInner: { height: 12, backgroundColor: 'rgba(120,170,255,0.85)' },
+});

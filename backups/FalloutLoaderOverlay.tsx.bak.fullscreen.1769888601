@@ -1,0 +1,162 @@
+import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, PanResponder, StyleSheet, Text, View } from 'react-native';
+import { Canvas, useFrame } from '@react-three/fiber/native';
+import { useGLTF, useProgress } from '@react-three/drei/native';
+
+function clamp(n: number, lo: number, hi: number) {
+  return Math.max(lo, Math.min(hi, n));
+}
+
+function LootModel({ url, rotYRef }: { url: string; rotYRef: React.MutableRefObject<number> }) {
+  const gltf: any = useGLTF(url);
+  const group = useRef<any>(null);
+
+  useFrame(() => {
+    if (!group.current) return;
+    const targetY = rotYRef.current;
+    const curY = group.current.rotation.y || 0;
+    group.current.rotation.y = curY + (targetY - curY) * 0.18;
+  });
+
+  return (
+    <group ref={group} position={[0, -0.85, 0]} scale={0.9}>
+      <primitive object={gltf.scene} />
+    </group>
+  );
+}
+
+function Spinner({ rotYRef }: { rotYRef: React.MutableRefObject<number> }) {
+  const mesh = useRef<any>(null);
+  useFrame((_s, dt) => {
+    rotYRef.current += dt * 0.35;
+    if (mesh.current) mesh.current.rotation.y = rotYRef.current;
+  });
+  return (
+    <mesh ref={mesh}>
+      <boxGeometry args={[1.2, 1.2, 1.2]} />
+      <meshStandardMaterial />
+    </mesh>
+  );
+}
+
+export default function FalloutLoaderOverlay({ lootUrl }: { lootUrl: string }) {
+  const { active, progress, total } = useProgress();
+
+  const opacity = useRef(new Animated.Value(0)).current;
+  const [visible, setVisible] = useState(true);
+
+  const pct = useMemo(() => {
+    const p = Number(progress || 0);
+    return Math.floor(clamp(p, 0, 100));
+  }, [progress]);
+
+  const shouldBeVisible = useMemo(() => {
+    if (active) return true;
+    if (total > 0 && pct < 100) return true;
+    return false;
+  }, [active, total, pct]);
+
+  useEffect(() => {
+    if (shouldBeVisible) {
+      if (!visible) setVisible(true);
+      Animated.timing(opacity, { toValue: 1, duration: 140, useNativeDriver: true }).start();
+      return;
+    }
+    if (visible && pct >= 100) {
+      Animated.timing(opacity, { toValue: 0, duration: 380, useNativeDriver: true }).start(({ finished }) => {
+        if (finished) setVisible(false);
+      });
+    }
+  }, [shouldBeVisible, pct, visible, opacity]);
+
+  const rotYRef = useRef(0);
+
+  const pan = useMemo(() => {
+    let start = 0;
+    return PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => { start = rotYRef.current; },
+      onPanResponderMove: (_e, g) => {
+        rotYRef.current = start + g.dx * 0.012;
+      },
+    });
+  }, []);
+
+  if (!visible) return null;
+
+  return (
+    <Animated.View style={[styles.wrap, { opacity }]}>
+      <View style={styles.card}>
+        <Text style={styles.title}>Loading…</Text>
+
+        <View {...pan.panHandlers} style={styles.preview}>
+          <Canvas gl={{ antialias: true }} camera={{ position: [0, 1.2, 3.2], fov: 45 }}>
+            <ambientLight intensity={0.7} />
+            <directionalLight position={[3, 6, 4]} intensity={1.1} />
+            <Suspense fallback={<Spinner rotYRef={rotYRef} />}>
+              <LootModel url={lootUrl} rotYRef={rotYRef} />
+            </Suspense>
+          </Canvas>
+          <Text style={styles.hint}>Drag to rotate</Text>
+        </View>
+
+        <View style={styles.barOuter}>
+          <View style={[styles.barInner, { width: `${pct}%` }]} />
+        </View>
+        <Text style={styles.pct}>{pct}%</Text>
+      </View>
+    </Animated.View>
+  );
+}
+
+useGLTF.preload;
+
+const styles = StyleSheet.create({
+  wrap: {
+    position: 'absolute',
+    left: 0, right: 0, top: 0, bottom: 0,
+    zIndex: 999,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+    backgroundColor: '#0a0f18',
+  },
+  card: {
+    width: '100%',
+    maxWidth: 520,
+    padding: 16,
+    borderRadius: 18,
+    backgroundColor: 'rgba(17,24,39,0.92)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+  },
+  title: { color: '#fff', fontSize: 16, fontWeight: '900' },
+  preview: {
+    marginTop: 12,
+    height: 240,
+    borderRadius: 14,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    justifyContent: 'flex-end',
+  },
+  hint: {
+    position: 'absolute',
+    left: 12,
+    bottom: 10,
+    color: 'rgba(255,255,255,0.75)',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  barOuter: {
+    height: 10,
+    borderRadius: 999,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(255,255,255,0.10)',
+    marginTop: 14,
+  },
+  barInner: { height: 10, backgroundColor: 'rgba(91,124,255,0.90)' },
+  pct: { color: '#cfcfcf', marginTop: 10, fontWeight: '800' },
+});

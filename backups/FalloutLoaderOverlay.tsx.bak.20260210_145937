@@ -1,0 +1,314 @@
+import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, PanResponder, Text, View, StyleSheet } from 'react-native';
+import { Canvas, useFrame } from '@react-three/fiber/native';
+import { useGLTF, useProgress, useTexture } from '@react-three/drei/native';
+import { MeshoptDecoder } from 'three-stdlib';
+import { MeshBVH } from 'three-mesh-bvh';
+
+try {
+} catch (e) {}
+
+function ext(url: string) {
+  const q = (url || '').split('?')[0];
+  const m = q.toLowerCase().match(/\.([a-z0-9]+)$/);
+  return m ? m[1] : '';
+}
+
+function PreloadGLB(props: { url: string; onAnyDone: (url: string) => void; onBvhDone: (url: string) => void }) {
+  const gltf = useGLTF(props.url as any, undefined as any, true as any, (loader: any) => { try { loader.setMeshoptDecoder?.(MeshoptDecoder); } catch (e) {} }) as any;
+  const scene = gltf?.scene as any;
+
+  useEffect(() => {
+    if (!scene) return;
+
+    try {
+      scene.traverse((m: any) => {
+        if (!m || !m.isMesh || !m.geometry) return;
+        const g: any = m.geometry;
+        if (!g.boundsTree) g.boundsTree = new MeshBVH(g);
+      });
+    } catch (err) {}
+
+    props.onBvhDone(props.url);
+    props.onAnyDone(props.url);
+  }, [scene, props]);
+
+  return null;
+}
+
+function PreloadTex(props: { url: string; onAnyDone: (url: string) => void }) {
+  const tex = useTexture(props.url);
+
+  useEffect(() => {
+    if (!tex) return;
+    props.onAnyDone(props.url);
+  }, [tex, props]);
+
+  return null;
+}
+
+function PreloadOne(props: { url: string; onAnyDone: (url: string) => void; onBvhDone: (url: string) => void }) {
+  const e = ext(props.url);
+
+  if (e === 'glb' || e === 'gltf') {
+    return <PreloadGLB url={props.url} onAnyDone={props.onAnyDone} onBvhDone={props.onBvhDone} />;
+  }
+
+  if (e === 'jpg' || e === 'jpeg' || e === 'png' || e === 'webp') {
+    return <PreloadTex url={props.url} onAnyDone={props.onAnyDone} />;
+  }
+
+  useEffect(() => {
+    props.onAnyDone(props.url);
+  }, [props]);
+
+  return null;
+}
+
+function LootModel({ url, rotYRef }: { url: string; rotYRef: React.MutableRefObject<number> }) {
+  const gltf = useGLTF(url as any, undefined as any, true as any, (loader: any) => { try { loader.setMeshoptDecoder?.(MeshoptDecoder); } catch (e) {} }) as any;
+  const scene = gltf?.scene as any;
+
+  const obj = useMemo(() => {
+    try {
+      return scene?.clone?.(true) ?? scene;
+    } catch (e) {
+      return scene;
+    }
+  }, [scene]);
+
+  useFrame(() => {
+    if (obj) obj.rotation.y = rotYRef.current;
+  });
+
+  if (!obj) return null;
+  return <primitive object={obj} position={[0, -0.2, 0]} />;
+}
+
+function LootPreview(props: {
+  lootUrl: string;
+  preloadUrls: string[];
+  rotYRef: React.MutableRefObject<number>;
+  onAnyDone: (url: string) => void;
+  onBvhDone: (url: string) => void;
+}) {
+  const unique = useMemo(() => Array.from(new Set((props.preloadUrls || []).filter(Boolean))), [props.preloadUrls]);
+
+  return (
+    <Canvas
+      style={styles.canvas}
+      gl={{ antialias: true }}
+      onCreated={({ gl }) => {
+        try {
+          (gl as any).setClearColor?.('#0a0f18', 1);
+        } catch (e) {}
+      }}
+      camera={{ position: [0, 1.2, 2.2], fov: 50 }}
+    >
+      <ambientLight intensity={1.2} />
+      <directionalLight position={[2, 4, 2]} intensity={1.4} />
+      <Suspense fallback={null}>
+        {unique.map((u) => (
+          <PreloadOne key={u} url={u} onAnyDone={props.onAnyDone} onBvhDone={props.onBvhDone} />
+        ))}
+        <group>
+          <LootModel url={props.lootUrl} rotYRef={props.rotYRef} />
+        </group>
+      </Suspense>
+    </Canvas>
+  );
+}
+
+export default function FalloutLoaderOverlay(props: {
+  lootUrl: string;
+  preloadUrls: string[];
+  onDone: () => void;
+  title?: string;
+  subtitle?: string;
+}) {
+  const rotYRef = useRef(0);
+  const opacity = useRef(new Animated.Value(1)).current;
+
+  const unique = useMemo(() => Array.from(new Set((props.preloadUrls || []).filter(Boolean))), [props.preloadUrls]);
+  const glbUrls = useMemo(() => unique.filter((u) => {
+    const e = ext(u);
+    return e === 'glb' || e === 'gltf';
+  }), [unique]);
+
+  const doneAnySet = useRef<Set<string>>(new Set());
+  const doneBvhSet = useRef<Set<string>>(new Set());
+
+  const [tick, setTick] = useState(0);
+  const [meshoptReady, setMeshoptReady] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        await (MeshoptDecoder as any).ready;
+      } catch (e) {}
+      if (!alive) return;
+      setMeshoptReady(true);
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  const onAnyDone = (url: string) => {
+    if (!url) return;
+    if (doneAnySet.current.has(url)) return;
+    doneAnySet.current.add(url);
+    setTick((n) => n + 1);
+  };
+
+  const onBvhDone = (url: string) => {
+    const e = ext(url);
+    if (e !== 'glb' && e !== 'gltf') return;
+    if (doneBvhSet.current.has(url)) return;
+    doneBvhSet.current.add(url);
+    setTick((n) => n + 1);
+  };
+
+  const allPreloadsDone = unique.length === 0 ? true : doneAnySet.current.size >= unique.length;
+  const allBvhsDone = glbUrls.length === 0 ? true : doneBvhSet.current.size >= glbUrls.length;
+
+  const { active, progress } = useProgress();
+  const pct = Math.max(0, Math.min(100, Math.round(progress)));
+
+  const doneOnce = useRef(false);
+
+  useEffect(() => {
+    if (doneOnce.current) return;
+
+    if (meshoptReady && !active && pct >= 100 && allPreloadsDone && allBvhsDone) {
+      doneOnce.current = true;
+      Animated.timing(opacity, { toValue: 0, duration: 260, useNativeDriver: true }).start(() => {
+        props.onDone();
+      });
+    }
+  }, [meshoptReady, active, pct, allPreloadsDone, allBvhsDone, opacity, props, tick]);
+
+  const pan = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderMove: (_evt, gs) => {
+          rotYRef.current += gs.dx * 0.01;
+        },
+      }),
+    []
+  );
+
+  const title = props.title ?? 'Loading';
+  const subtitle = props.subtitle ?? 'Drag to rotate';
+
+  return (
+    <Animated.View style={[styles.wrap, { opacity }]} pointerEvents="auto">
+      <View style={styles.top}>
+        <Text style={styles.title}>{title}</Text>
+        <Text style={styles.subtitle}>{subtitle}</Text>
+        <Text style={styles.pct}>{meshoptReady ? `${pct}%` : 'Preparing...'}</Text>
+      </View>
+
+      <View style={styles.preview} {...pan.panHandlers}>
+        {meshoptReady ? (
+          <LootPreview
+            lootUrl={props.lootUrl}
+            preloadUrls={unique}
+            rotYRef={rotYRef}
+            onAnyDone={onAnyDone}
+            onBvhDone={onBvhDone}
+          />
+        ) : (
+          <View style={styles.blank} />
+        )}
+      </View>
+
+      <View style={styles.bottom}>
+        <View style={styles.barOuter}>
+          <View style={[styles.barInner, { width: `${meshoptReady ? pct : 5}%` }]} />
+        </View>
+        <Text style={styles.detail}>
+          {meshoptReady
+            ? `Assets ${doneAnySet.current.size}/${unique.length} • BVH ${doneBvhSet.current.size}/${glbUrls.length}`
+            : 'Initializing decoder...'}
+        </Text>
+      </View>
+    </Animated.View>
+  );
+}
+
+const styles = StyleSheet.create({
+  wrap: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#070b12',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  top: {
+    width: '92%',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  title: {
+    color: '#e9f0ff',
+    fontSize: 22,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+    marginBottom: 4,
+  },
+  subtitle: {
+    color: '#a9b7d6',
+    fontSize: 13,
+    marginBottom: 6,
+  },
+  pct: {
+    color: '#cfe1ff',
+    fontSize: 12,
+    opacity: 0.9,
+  },
+  preview: {
+    width: '92%',
+    height: 280,
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: '#0a0f18',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+  },
+  canvas: {
+    width: '100%',
+    height: '100%',
+  },
+  blank: {
+    flex: 1,
+    backgroundColor: '#0a0f18',
+  },
+  bottom: {
+    width: '92%',
+    marginTop: 12,
+    alignItems: 'center',
+  },
+  barOuter: {
+    width: '100%',
+    height: 10,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    overflow: 'hidden',
+  },
+  barInner: {
+    height: '100%',
+    borderRadius: 999,
+    backgroundColor: 'rgba(140,190,255,0.95)',
+  },
+  detail: {
+    color: '#97a6c7',
+    fontSize: 11,
+    marginTop: 8,
+    opacity: 0.9,
+  },
+});
