@@ -1,15 +1,20 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View } from 'react-native';
 import FantasyWorld3D from './FantasyWorld3D';
 import { GameHUD } from '../../ui/hud/GameHUD';
 import { WorldLoadingScreen } from '../../ui/loading/WorldLoadingScreen';
 import { fantasyTips } from './fantasyLogic';
+import { resetWorldReady, useWorldReadiness } from '../../loading/worldLoadState';
 
 export function FantasyScreen({ navigation, game }: any) {
   const [shootPulse, setShootPulse] = useState(0);
   const [walking, setWalking] = useState(false);
   const [upgradesOpen, setUpgradesOpen] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const readiness = useWorldReadiness('fantasy');
+
+  useEffect(() => {
+    resetWorldReady('fantasy');
+  }, []);
 
   const shootGain = game?.stats?.fantasyTapGain ?? 1;
 
@@ -27,12 +32,11 @@ export function FantasyScreen({ navigation, game }: any) {
   return (
     <View style={{ flex: 1, backgroundColor: '#000' }}>
       <FantasyWorld3D
-          onReady={() => setLoading(false)}
+        onReady={() => undefined}
         walking={walking}
         shootPulse={shootPulse}
         bulletDmgEnemy={Math.max(1, Math.round(1 * (game?.stats?.fantasyDamageMult ?? 1)))}
-          bulletDmgBoss={Math.max(2, Math.round(2 * (game?.stats?.fantasyDamageMult ?? 1)))}
-          
+        bulletDmgBoss={Math.max(2, Math.round(2 * (game?.stats?.fantasyDamageMult ?? 1)))}
         onPodium={() => undefined}
         onMonument={() => undefined}
         onEnemyKilled={(kind) => {
@@ -61,7 +65,7 @@ export function FantasyScreen({ navigation, game }: any) {
         onBuyUpgrade={game?.buyUpgrade}
       />
 
-      {loading ? <WorldLoadingScreen world="fantasy" progress={95} asset="Scene Stabilization" tip={fantasyTips[0]} /> : null}
+      {!readiness.playable ? <WorldLoadingScreen world="fantasy" progress={Math.round(readiness.progress * 100)} asset="Preparing Fantasy Valley" tip={fantasyTips[0]} phase={readiness.phase} error={readiness.error} blockers={readiness.blockers} /> : null}
     </View>
   );
 }

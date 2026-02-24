@@ -148,7 +148,7 @@ const USE_GAZEBO_BVH = false;
 
 const getFantasyUri = (k: string): string => String(getBestAssetUri('fantasy', k) || '');
 
-const MOUNTAIN_URL = () => (getFantasyUri('mountainMobile') || getFantasyUri('mountain'));
+const MOUNTAIN_URL = () => getFantasyUri('mountain');
 
 const GAZEBO_URL = () => getFantasyUri('gazebo');
 const PATH_GLB_URL = () => getFantasyUri('path');
@@ -802,7 +802,7 @@ const fpsAccRef = useRef({ t: 0, frames: 0, worstMs: 0 });
 
   useEffect(() => {
     let alive = true;
-    console.log('[ASSET_URI] fantasy', { path: PATH_GLB_URL().startsWith('file://'), gazebo: GAZEBO_URL().startsWith('file://'), staff: STAFF_URL().startsWith('file://') });
+    console.log('[ASSET_URI] fantasy', { mountain: MOUNTAIN_URL(), gazebo: GAZEBO_URL(), path: PATH_GLB_URL(), podium: PODIUM_URL(), staff: STAFF_URL(), monsterModel: MONSTER1_MODEL_URL() });
     const q = async () => {
       props.onReady?.();
       reportWorldGate('fantasy', 'scene-mounted');
@@ -821,14 +821,22 @@ const fpsAccRef = useRef({ t: 0, frames: 0, worstMs: 0 });
       setBootPhase(2);
       setWorldPhase('fantasy', 'stage2-props', 0.6);
 
-      for (const u of [FOREST_FOREST_TREE_URL(), MOUNTAIN_URL(), MONSTER1_MODEL_URL(), MONSTER1_WALK_URL(), MONSTER1_RUN_URL(), MONSTER1_ATTACK_URL()]) {
+      for (const u of [FOREST_FOREST_TREE_URL(), MOUNTAIN_URL()]) {
         if (!u) continue;
         try { preloadGLTFMeshopt(u as any); } catch {}
-        try { await new Promise((r) => setTimeout(r, 120)); } catch {}
+        try { await new Promise((r) => setTimeout(r, 80)); } catch {}
         if (!alive) return;
       }
       setBootPhase(3);
       setWorldPhase('fantasy', 'stage3-streaming', 0.9);
+
+      setTimeout(() => {
+        for (const u of [MONSTER1_MODEL_URL(), MONSTER1_WALK_URL(), MONSTER1_RUN_URL(), MONSTER1_ATTACK_URL()]) {
+          if (!u) continue;
+          try { preloadGLTFMeshopt(u as any); } catch {}
+        }
+        console.log('[PERF] fantasy deferred monster preload queued');
+      }, 900);
     };
     q();
     return () => { alive = false; };

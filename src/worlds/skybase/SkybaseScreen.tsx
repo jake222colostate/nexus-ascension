@@ -1,13 +1,18 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View } from 'react-native';
 import SkybaseWorld3D from './SkybaseWorld3D';
 import { GameHUD } from '../../ui/hud/GameHUD';
 import { WorldLoadingScreen } from '../../ui/loading/WorldLoadingScreen';
 import { skybaseTips } from './skybaseLogic';
+import { resetWorldReady, useWorldReadiness } from '../../loading/worldLoadState';
 
 export function SkybaseScreen({ navigation, game }: any) {
   const [upgradesOpen, setUpgradesOpen] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const readiness = useWorldReadiness('skybase');
+
+  useEffect(() => {
+    resetWorldReady('skybase');
+  }, []);
 
   const shootGain = game?.stats?.skybaseTapGain ?? 1;
 
@@ -45,7 +50,7 @@ export function SkybaseScreen({ navigation, game }: any) {
         onBuyUpgrade={game?.buyUpgrade}
       />
 
-      {loading ? <WorldLoadingScreen world="skybase" progress={95} asset="Scene Stabilization" tip={skybaseTips[0]} /> : null}
+      {!readiness.playable ? <WorldLoadingScreen world="skybase" progress={Math.round(readiness.progress * 100)} asset="Preparing Skybase" tip={skybaseTips[0]} phase={readiness.phase} error={readiness.error} blockers={readiness.blockers} /> : null}
     </View>
   );
 }

@@ -1,34 +1,17 @@
 import React, { useEffect, useMemo, useRef } from "react";
-import { Asset } from "expo-asset";
 import { useGLTF, useAnimations } from "@react-three/drei/native";
+import { getBestAssetUri } from "../../../assets/worldUris";
 import * as THREE from "three";
 import { SkeletonUtils } from "three-stdlib";
 
 export type Summon1Anim = "walk" | "run" | "cast1" | "cast2" | "cast3";
 
-const SUMMON_BASE_URL = Asset.fromModule(
-  require("../../../../assets/glb/fantasy3d/Summons/Summons1/summon_texture.glb")
-).uri;
-
-const SUMMON_WALK_URL = Asset.fromModule(
-  require("../../../../assets/glb/fantasy3d/Summons/Summons1/walking.glb")
-).uri;
-
-const SUMMON_RUN_URL = Asset.fromModule(
-  require("../../../../assets/glb/fantasy3d/Summons/Summons1/running.glb")
-).uri;
-
-const SUMMON_CAST1_URL = Asset.fromModule(
-  require("../../../../assets/glb/fantasy3d/Summons/Summons1/spellcast1.glb")
-).uri;
-
-const SUMMON_CAST2_URL = Asset.fromModule(
-  require("../../../../assets/glb/fantasy3d/Summons/Summons1/spellcast2.glb")
-).uri;
-
-const SUMMON_CAST3_URL = Asset.fromModule(
-  require("../../../../assets/glb/fantasy3d/Summons/Summons1/spellcast3.glb")
-).uri;
+const SUMMON_BASE_URL = getBestAssetUri('fantasy', 'summonBase');
+const SUMMON_WALK_URL = getBestAssetUri('fantasy', 'summonWalk');
+const SUMMON_RUN_URL = getBestAssetUri('fantasy', 'summonRun');
+const SUMMON_CAST1_URL = getBestAssetUri('fantasy', 'summonCast1');
+const SUMMON_CAST2_URL = getBestAssetUri('fantasy', 'summonCast2');
+const SUMMON_CAST3_URL = getBestAssetUri('fantasy', 'summonCast3');
 
 useGLTF.preload(SUMMON_BASE_URL as any);
 useGLTF.preload(SUMMON_WALK_URL as any);

@@ -5,28 +5,78 @@ const modules = {
     skyboxGlobal: require('../../assets/glb/skybase/skybox1.jpg'),
   },
   fantasy: {
-    mountain: require('../../assets/glb/fantasy3d/mountain_v2.glb'),
     mountainMobile: require('../../assets/glb/fantasy3d/mountain_v2_mobile.glb'),
-    gazebo: require('../../assets/glb/fantasy3d/spawn_gazebo.glb'),
-    path: require('../../assets/glb/fantasy3d/path.glb'),
-    podium: require('../../assets/glb/fantasy3d/podium_v1.glb'),
-    forestTree: require('../../assets/glb/fantasy3d/forest_tree.glb'),
-    crystal1: require('../../assets/glb/fantasy3d/Crystals/crystal1.glb'),
-    crystal2: require('../../assets/glb/fantasy3d/Crystals/crystal2.glb'),
-    crystal3: require('../../assets/glb/fantasy3d/Crystals/crystal3.glb'),
-    crystal4: require('../../assets/glb/fantasy3d/Crystals/crystal4.glb'),
-    crystal5: require('../../assets/glb/fantasy3d/Crystals/crystal5.glb'),
-    monsterModel: require('../../assets/glb/fantasy3d/monster1/monster1_model.glb'),
-    monsterWalk: require('../../assets/glb/fantasy3d/monster1/monster1_walking.glb'),
-    monsterRun: require('../../assets/glb/fantasy3d/monster1/monster1_running.glb'),
-    monsterAttack: require('../../assets/glb/fantasy3d/monster1/monster1_attack_v1.glb'),
-    staff: require('../../assets/glb/fantasy3d/staff1.glb'),
+    mountainLegacy: require('../../assets/glb/_old/fantasy3d/mountain_v2.glb'),
+    gazeboMobile: require('../../assets/glb/fantasy3d/spawn_gazebo_mobile.glb'),
+    gazeboLegacy: require('../../assets/glb/_old/fantasy3d/spawn_gazebo.glb'),
+    pathMobile: require('../../assets/glb/fantasy3d/path_mobile.glb'),
+    pathLegacy: require('../../assets/glb/_old/fantasy3d/path.glb'),
+    podiumMobile: require('../../assets/glb/fantasy3d/podium_v1_mobile.glb'),
+    podiumLegacy: require('../../assets/glb/_old/fantasy3d/podium_v1.glb'),
+    forestTreeMobile: require('../../assets/glb/fantasy3d/forest_tree_mobile.glb'),
+    forestTreeLegacy: require('../../assets/glb/_old/fantasy3d/forest_tree.glb'),
+    crystal1Mobile: require('../../assets/glb/fantasy3d/Crystals/crystal1_mobile.glb'),
+    crystal1Legacy: require('../../assets/glb/_old/fantasy3d/Crystals/crystal1.glb'),
+    crystal2Mobile: require('../../assets/glb/fantasy3d/Crystals/crystal2_mobile.glb'),
+    crystal2Legacy: require('../../assets/glb/_old/fantasy3d/Crystals/crystal2.glb'),
+    crystal3Mobile: require('../../assets/glb/fantasy3d/Crystals/crystal3_mobile.glb'),
+    crystal3Legacy: require('../../assets/glb/_old/fantasy3d/Crystals/crystal3.glb'),
+    crystal4Mobile: require('../../assets/glb/fantasy3d/Crystals/crystal4_mobile.glb'),
+    crystal4Legacy: require('../../assets/glb/_old/fantasy3d/Crystals/crystal4.glb'),
+    crystal5Mobile: require('../../assets/glb/fantasy3d/Crystals/crystal5_mobile.glb'),
+    crystal5Legacy: require('../../assets/glb/_old/fantasy3d/Crystals/crystal5.glb'),
+    monsterModelMobile: require('../../assets/glb/fantasy3d/monster1/monster1_model_mobile.glb'),
+    monsterModelLegacy: require('../../assets/glb/_old/fantasy3d/monster1/monster1_model.glb'),
+    monsterWalkMobile: require('../../assets/glb/fantasy3d/monster1/monster1_walking_mobile.glb'),
+    monsterWalkLegacy: require('../../assets/glb/_old/fantasy3d/monster1/monster1_walking.glb'),
+    monsterRunMobile: require('../../assets/glb/fantasy3d/monster1/monster1_running_mobile.glb'),
+    monsterRunLegacy: require('../../assets/glb/_old/fantasy3d/monster1/monster1_running.glb'),
+    monsterAttackMobile: require('../../assets/glb/fantasy3d/monster1/monster1_attack_v1_mobile.glb'),
+    monsterAttackLegacy: require('../../assets/glb/_old/fantasy3d/monster1/monster1_attack_v1.glb'),
+    staffMobile: require('../../assets/glb/fantasy3d/staff1_mobile.glb'),
+    staffLegacy: require('../../assets/glb/_old/fantasy3d/staff1.glb'),
+    summonBaseMobile: require('../../assets/glb/fantasy3d/Summons/Summons1/summon_texture_mobile.glb'),
+    summonBaseLegacy: require('../../assets/glb/_old/fantasy3d/Summons/Summons1/summon_texture.glb'),
+    summonWalkMobile: require('../../assets/glb/fantasy3d/Summons/Summons1/walking_mobile.glb'),
+    summonWalkLegacy: require('../../assets/glb/_old/fantasy3d/Summons/Summons1/walking.glb'),
+    summonRunMobile: require('../../assets/glb/fantasy3d/Summons/Summons1/running_mobile.glb'),
+    summonRunLegacy: require('../../assets/glb/_old/fantasy3d/Summons/Summons1/running.glb'),
+    summonCast1Mobile: require('../../assets/glb/fantasy3d/Summons/Summons1/spellcast1_mobile.glb'),
+    summonCast1Legacy: require('../../assets/glb/_old/fantasy3d/Summons/Summons1/spellcast1.glb'),
+    summonCast2Mobile: require('../../assets/glb/fantasy3d/Summons/Summons1/spellcast2_mobile.glb'),
+    summonCast2Legacy: require('../../assets/glb/_old/fantasy3d/Summons/Summons1/spellcast2.glb'),
+    summonCast3Mobile: require('../../assets/glb/fantasy3d/Summons/Summons1/spellcast3_mobile.glb'),
+    summonCast3Legacy: require('../../assets/glb/_old/fantasy3d/Summons/Summons1/spellcast3.glb'),
     fantasySkybox: require('../../assets/glb/skybase/skybox1.jpg'),
   },
   skybase: {
     skybox: require('../../assets/glb/skybase/skybase_stage1_skybox.jpeg'),
   },
 } as const;
+
+const PREFERRED_KEYS: Record<string, readonly string[]> = {
+  mountain: ['mountainMobile', 'mountain', 'mountainLegacy'],
+  gazebo: ['gazeboMobile', 'gazebo', 'gazeboLegacy'],
+  path: ['pathMobile', 'path', 'pathLegacy'],
+  podium: ['podiumMobile', 'podium', 'podiumLegacy'],
+  forestTree: ['forestTreeMobile', 'forestTree', 'forestTreeLegacy'],
+  crystal1: ['crystal1Mobile', 'crystal1', 'crystal1Legacy'],
+  crystal2: ['crystal2Mobile', 'crystal2', 'crystal2Legacy'],
+  crystal3: ['crystal3Mobile', 'crystal3', 'crystal3Legacy'],
+  crystal4: ['crystal4Mobile', 'crystal4', 'crystal4Legacy'],
+  crystal5: ['crystal5Mobile', 'crystal5', 'crystal5Legacy'],
+  monsterModel: ['monsterModelMobile', 'monsterModel', 'monsterModelLegacy'],
+  monsterWalk: ['monsterWalkMobile', 'monsterWalk', 'monsterWalkLegacy'],
+  monsterRun: ['monsterRunMobile', 'monsterRun', 'monsterRunLegacy'],
+  monsterAttack: ['monsterAttackMobile', 'monsterAttack', 'monsterAttackLegacy'],
+  staff: ['staffMobile', 'staff', 'staffLegacy'],
+  summonBase: ['summonBaseMobile', 'summonBase', 'summonBaseLegacy'],
+  summonWalk: ['summonWalkMobile', 'summonWalk', 'summonWalkLegacy'],
+  summonRun: ['summonRunMobile', 'summonRun', 'summonRunLegacy'],
+  summonCast1: ['summonCast1Mobile', 'summonCast1', 'summonCast1Legacy'],
+  summonCast2: ['summonCast2Mobile', 'summonCast2', 'summonCast2Legacy'],
+  summonCast3: ['summonCast3Mobile', 'summonCast3', 'summonCast3Legacy'],
+};
 
 export type WorldUris = {
   core: Record<string, string>;
@@ -46,6 +96,7 @@ function asUriMap(source: any): WorldUris {
 
 export const WORLD_URIS: WorldUris = asUriMap(modules);
 let RESOLVED_WORLD_URIS: WorldUris | null = null;
+const loggedBest = new Set<string>();
 
 export function getWorldUris(): WorldUris {
   return RESOLVED_WORLD_URIS ?? WORLD_URIS;
@@ -55,17 +106,19 @@ export function hasResolvedWorldUris(): boolean {
   return RESOLVED_WORLD_URIS != null;
 }
 
-function keyWithMobilePreference(keys: string[], key: string): string {
-  const mobile = `${key}Mobile`;
-  if (keys.includes(mobile)) return mobile;
-  return key;
-}
-
 export function getBestAssetUri(world: keyof WorldUris, key: string): string {
   const uris = getWorldUris()[world] ?? {};
-  const keys = Object.keys(uris);
-  const finalKey = keyWithMobilePreference(keys, key);
-  return String(uris[finalKey] ?? uris[key] ?? '');
+  const preferredKeys = PREFERRED_KEYS[key] ?? [`${key}Mobile`, key, `${key}Legacy`];
+  const chosenKey = preferredKeys.find((candidate) => Boolean(uris[candidate])) ?? key;
+  const uri = String(uris[chosenKey] ?? uris[key] ?? '');
+
+  const logKey = `${world}:${key}`;
+  if (!loggedBest.has(logKey)) {
+    loggedBest.add(logKey);
+    console.log(`[ASSET_SELECT] world=${world} key=${key} chosen=${chosenKey} mobile=${chosenKey.toLowerCase().includes('mobile')} uri=${uri}`);
+  }
+
+  return uri;
 }
 
 export async function resolveWorldUris(onProgress?: (p: AssetProgress) => void): Promise<WorldUris> {
