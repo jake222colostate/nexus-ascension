@@ -2,6 +2,7 @@ import { useGLTF } from '@react-three/drei/native';
 import { useLoader } from '@react-three/fiber/native';
 import { MeshoptDecoder } from 'meshoptimizer';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { MeshoptGLTFLoaderV2 } from '../loading/MeshoptGLTFLoaderV2';
 
 let didInstall = false;
 let readyPromise: Promise<void> | null = null;
@@ -64,12 +65,12 @@ export function useGLTFMeshopt(url: any): any {
       r.__nexusReady = true;
     });
   }
-  return useLoader(GLTFLoader as any, url);
+  return useLoader(MeshoptGLTFLoaderV2 as any, url);
 }
 
 export function preloadGLTFMeshopt(url: any) {
   installMeshoptDecoder();
   getReadyPromise().then(() => {
-    (useLoader as any).preload(GLTFLoader as any, url);
+    (useLoader as any).preload(MeshoptGLTFLoaderV2 as any, url);
   });
 }
