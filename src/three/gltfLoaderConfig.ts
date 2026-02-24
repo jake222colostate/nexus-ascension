@@ -2,10 +2,14 @@ import { useGLTF } from '@react-three/drei/native';
 import { useLoader } from '@react-three/fiber/native';
 import { MeshoptDecoder } from 'meshoptimizer';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { MeshoptGLTFLoaderV2 } from '../loading/MeshoptGLTFLoaderV2';
 
-let didInstall = false;
 let readyPromise: Promise<void> | null = null;
+let didInstall = false;
+let didLogMeshoptAttach = false;
+
+const MESHOPT_DEBUG =
+  typeof globalThis !== 'undefined' &&
+  !!(globalThis as any).__NEXUS_DEBUG_MESHOPT;
 
 function getReadyPromise(): Promise<void> {
   if (!readyPromise) {
@@ -16,36 +20,32 @@ function getReadyPromise(): Promise<void> {
   return readyPromise;
 }
 
-function installDecoderOnLoader(loader: any) {
-  if (!loader || !(loader as any).setMeshoptDecoder || !MeshoptDecoder) return;
-  if ((loader as any).__nexusMeshoptInstalled) return;
-  (loader as any).setMeshoptDecoder(MeshoptDecoder as any);
-  (loader as any).__nexusMeshoptInstalled = true;
+function markMeshoptInstalled(loader: any) {
+  loader.__nexusMeshoptInstalled = true;
+  if (MESHOPT_DEBUG && !didLogMeshoptAttach) {
+    didLogMeshoptAttach = true;
+    console.log('[meshopt] attached decoder to GLTFLoader instance');
+  }
 }
 
-function patchGLTFLoaderPrototype() {
-  const proto: any = GLTFLoader.prototype as any;
-  if (proto.__nexusMeshoptPatched) return;
-  proto.__nexusMeshoptPatched = true;
+export function configureGLTFLoader(loader: GLTFLoader) {
+  const anyLoader = loader as any;
+  if (anyLoader.__nexusMeshoptInstalled) return;
+  if (MeshoptDecoder && anyLoader.setMeshoptDecoder) {
+    anyLoader.setMeshoptDecoder(MeshoptDecoder as any);
+    markMeshoptInstalled(anyLoader);
+  }
+}
 
-  const originalLoad = proto.load;
-  proto.load = function patchedLoad(this: any, ...args: any[]) {
-    installDecoderOnLoader(this);
-    return originalLoad.apply(this, args);
-  };
-
-  const originalParse = proto.parse;
-  proto.parse = function patchedParse(this: any, ...args: any[]) {
-    installDecoderOnLoader(this);
-    return originalParse.apply(this, args);
-  };
+export function getGLTFLoader(manager?: ConstructorParameters<typeof GLTFLoader>[0]) {
+  const loader = new GLTFLoader(manager);
+  configureGLTFLoader(loader);
+  return loader;
 }
 
 export function installMeshoptDecoder() {
   if (didInstall) return;
   didInstall = true;
-
-  patchGLTFLoaderPrototype();
 
   if ((useGLTF as any)?.setMeshoptDecoder && MeshoptDecoder) {
     (useGLTF as any).setMeshoptDecoder(MeshoptDecoder as any);
@@ -65,12 +65,16 @@ export function useGLTFMeshopt(url: any): any {
       r.__nexusReady = true;
     });
   }
-  return useLoader(MeshoptGLTFLoaderV2 as any, url);
+
+  return useLoader(GLTFLoader as any, url, configureGLTFLoader as any);
 }
 
 export function preloadGLTFMeshopt(url: any) {
   installMeshoptDecoder();
   getReadyPromise().then(() => {
-    (useLoader as any).preload(MeshoptGLTFLoaderV2 as any, url);
+    (useLoader as any).preload(GLTFLoader as any, url, configureGLTFLoader as any);
+    if ((useGLTF as any)?.preload) {
+      (useGLTF as any).preload(url, undefined, undefined, configureGLTFLoader);
+    }
   });
 }
