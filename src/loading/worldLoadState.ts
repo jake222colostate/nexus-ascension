@@ -1,25 +1,34 @@
 import { useSyncExternalStore } from 'react';
 import type { WorldKey } from '../assets/assetManifest';
 
-type PlayableWorld = Exclude<WorldKey, 'core'>;
+export type PlayableWorld = Exclude<WorldKey, 'core'>;
 
-type WorldGate = 'entry-assets' | 'canvas-mounted' | 'scene-mounted' | 'first-frame' | 'controls-ready' | 'world-visible' | 'playable';
+export type WorldGate =
+  | 'entry-assets'
+  | 'canvas-mounted'
+  | 'scene-mounted'
+  | 'first-frame'
+  | 'controls-ready'
+  | 'world-visible'
+  | 'playable';
 
 const REQUIRED_GATES: Record<PlayableWorld, WorldGate[]> = {
   fantasy: ['entry-assets', 'canvas-mounted', 'scene-mounted', 'first-frame', 'controls-ready', 'world-visible', 'playable'],
   skybase: ['entry-assets', 'canvas-mounted', 'scene-mounted', 'first-frame', 'controls-ready', 'world-visible', 'playable'],
 };
 
+type GateInfo = { at: number; detail?: string };
+
 type PhaseState = {
   playable: boolean;
   phase: string;
-  progress: number;
-  displayProgress: number;
+  progress: number;        // 0..1 logical progress (gates/phase hints)
+  displayProgress: number; // smoothed 0..1 for UI
   startedAt: number;
   playableAt?: number;
   error?: string;
   requiredGates: WorldGate[];
-  gates: Partial<Record<WorldGate, { at: number; detail?: string }>>;
+  gates: Partial<Record<WorldGate, GateInfo>>;
 };
 
 const states: Record<WorldKey, PhaseState> = {
@@ -91,6 +100,7 @@ export function resetWorldReady(world: PlayableWorld) {
     gates: {},
     error: undefined,
   };
+  __snapshotCache[world] = undefined;
   emit();
 }
 
@@ -101,6 +111,7 @@ export function setWorldPhase(world: PlayableWorld, phaseName: string, progressH
     const bounded = Math.max(0, Math.min(0.99, progressHint));
     s.progress = Math.max(s.progress, bounded);
   }
+  __snapshotCache[world] = undefined;
   emit();
 }
 
@@ -114,9 +125,12 @@ export function reportWorldGate(world: PlayableWorld, gate: WorldGate, detail?: 
     s.playable = true;
     s.playableAt = Date.now();
     s.phase = 'playable';
+    s.progress = 1;
+    s.displayProgress = 1;
   }
   s.error = undefined;
   recomputeProgress(world);
+  __snapshotCache[world] = undefined;
   emit();
 }
 
@@ -125,18 +139,51 @@ export function setWorldError(world: PlayableWorld, reason: string) {
   s.error = reason;
   s.phase = 'error';
   console.error(`[LOAD_ERROR] ${world} ${reason}`);
+  __snapshotCache[world] = undefined;
   emit();
 }
 
-export function markWorldPlayable(world: PlayableWorld) {
-  reportWorldGate(world, 'playable');
-}
-
-export function isWorldReady(world: PlayableWorld) {
-  return states[world].playable;
-}
-
+export function markWorldPlayable(world: PlayableWorld) { reportWorldGate(world, 'playable'); }
 export function markWorldReady(world: PlayableWorld) { markWorldPlayable(world); }
+export function isWorldReady(world: PlayableWorld) { return states[world].playable; }
+
+// ---- useSyncExternalStore snapshot caching ----
+// React requires getSnapshot to be referentially stable when values are unchanged.
+type Snapshot = {
+  playable: boolean;
+  phase: string;
+  progress: number;
+  rawProgress: number;
+  error?: string;
+};
+
+const __snapshotCache: Partial<Record<PlayableWorld, Snapshot>> = {};
+
+function __getSnapshot(world: PlayableWorld): Snapshot {
+  const s = states[world];
+  const next: Snapshot = {
+    playable: s.playable,
+    phase: s.phase,
+    progress: s.displayProgress,
+    rawProgress: s.progress,
+    error: s.error,
+  };
+
+  const prev = __snapshotCache[world];
+  if (
+    prev &&
+    prev.playable === next.playable &&
+    prev.phase === next.phase &&
+    prev.progress === next.progress &&
+    prev.rawProgress === next.rawProgress &&
+    prev.error === next.error
+  ) {
+    return prev;
+  }
+
+  __snapshotCache[world] = next;
+  return next;
+}
 
 export function useWorldReadiness(world: PlayableWorld) {
   return useSyncExternalStore(
@@ -144,15 +191,6 @@ export function useWorldReadiness(world: PlayableWorld) {
       listeners.add(cb);
       return () => listeners.delete(cb);
     },
-    () => {
-      const s = states[world];
-      return {
-        playable: s.playable,
-        phase: s.phase,
-        progress: s.displayProgress,
-        rawProgress: s.progress,
-        error: s.error,
-      };
-    },
+    () => __getSnapshot(world),
   );
 }
