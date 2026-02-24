@@ -1,5 +1,7 @@
 export {
+  configureGLTFLoader,
   ensureMeshoptReady,
+  getGLTFLoader,
   installMeshoptDecoder,
   preloadGLTFMeshopt,
   useGLTFMeshopt,
