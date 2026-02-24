@@ -60,6 +60,20 @@ export const WORLD_URIS: WorldUris = {
   },
 };
 
+// Resolved local URIs (populated after resolveWorldUris / downloadAllWorldAssets runs)
+let RESOLVED_WORLD_URIS: WorldUris | null = null;
+
+// Prefer resolved local URIs when available (fast, offline), else fall back to packager URIs
+export function getWorldUris(): WorldUris {
+  return RESOLVED_WORLD_URIS ?? WORLD_URIS;
+}
+
+// For debugging/telemetry if needed
+export function hasResolvedWorldUris(): boolean {
+  return RESOLVED_WORLD_URIS != null;
+}
+
+
 export async function resolveWorldUris(onProgress?: (p: AssetProgress) => void): Promise<WorldUris> {
   const resolved: any = { core: {}, fantasy: {}, skybase: {} };
 
@@ -82,7 +96,8 @@ export async function resolveWorldUris(onProgress?: (p: AssetProgress) => void):
     onProgress?.({ done, total, world: String(e.world), key: String(e.key) });
   }
 
-  return resolved as WorldUris;
+  RESOLVED_WORLD_URIS = resolved as WorldUris;
+  return RESOLVED_WORLD_URIS;
 }
 
 // keep old name used elsewhere, but now it actually resolves localUri for fast loads

@@ -1,3 +1,4 @@
+import './src/loading/runtimePolyfills';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import "./src/loading/meshoptSetup";
 import { AppState, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -11,8 +12,10 @@ import FantasyWorld3D from './src/worlds/fantasy/FantasyWorld3D';
 import FalloutLoaderOverlay from './src/ui/loading/FalloutLoaderOverlay';
 import SkybaseWorld3D from './src/worlds/skybase/SkybaseWorld3D';
 import { GameHUD } from './src/ui/hud/GameHUD';
-import { WORLD_ENTRY_ASSETS } from './src/assets/assetManifest';
+import { buildWorldEntryAssets } from './src/assets/assetManifest';
+import { downloadAllWorldAssets, getWorldUris, hasResolvedWorldUris } from './src/assets/worldUris';
 import { isWorldReady, markWorldReady } from './src/loading/worldLoadState';
+
 
 const __origLog = console.log.bind(console);
 const __origWarn = console.warn.bind(console);
@@ -1150,7 +1153,7 @@ function LoadingFantasyScreen({ navigation }: any) {
   return (
     <View style={{ flex: 1, backgroundColor: '#0a0f18' }}>
       <FalloutLoaderOverlay
-        assets={WORLD_ENTRY_ASSETS.fantasy}
+        assets={buildWorldEntryAssets('fantasy', getWorldUris())}
         onDone={() => {
           markWorldReady('fantasy');
           navigation.replace('Fantasy');
@@ -1166,7 +1169,7 @@ function LoadingSkybaseScreen({ navigation }: any) {
   return (
     <View style={{ flex: 1, backgroundColor: '#0a0f18' }}>
       <FalloutLoaderOverlay
-        assets={WORLD_ENTRY_ASSETS.skybase}
+        assets={buildWorldEntryAssets('skybase', getWorldUris())}
         onDone={() => {
           markWorldReady('skybase');
           navigation.replace('Skybase');
@@ -1239,6 +1242,45 @@ function ScreenStub({ title, body }: { title: string; body: string }) {
 }
 
 export default function App() {
+  const [booting, setBooting] = useState(true);
+  const [bootMsg, setBootMsg] = useState('Downloading all assets…');
+  const [bootPct, setBootPct] = useState(0);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        await downloadAllWorldAssets((p: any) => {
+          if (!alive) return;
+          const pct = p.total ? Math.floor((p.done / p.total) * 100) : 0;
+          setBootPct(pct);
+          setBootMsg(`Downloading all assets… ${pct}%`);
+        });
+      } catch {
+      } finally {
+                try {
+          const u: any = getWorldUris();
+          const sample = (u?.fantasy)?.crystal1 || (u?.fantasy)?.gazebo || (u?.fantasy)?.mountain;
+          const isLocal = typeof sample === 'string' && sample.startsWith('file');
+          console.log('BOOT_URIS', { resolved: hasResolvedWorldUris(), sample, isLocal });
+        } catch {}
+        if (alive) setBooting(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+  if (booting) {
+    return (
+      <SafeAreaView edges={[]} style={{ flex: 1, backgroundColor: '#0a0f18', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+        <Text style={{ color: '#fff', fontSize: 18, fontWeight: '900', marginBottom: 10 }}>Nexus Ascension</Text>
+        <Text style={{ color: '#cfcfcf', fontSize: 14, marginBottom: 12 }}>{bootMsg}</Text>
+        <View style={{ width: '100%', maxWidth: 360, height: 12, backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 999, overflow: 'hidden' }}>
+          <View style={{ height: 12, width: `${Math.max(0, Math.min(100, bootPct))}%`, backgroundColor: 'rgba(120,180,255,0.85)' }} />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <NavigationContainer>
       <Stack.Navigator

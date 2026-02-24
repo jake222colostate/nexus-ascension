@@ -23,30 +23,36 @@ type Props =
     };
 
 
-async function preloadAllAssets(urls: string[]) {
+async function preloadAllAssets(urls: string[], opts?: { maxGlb?: number }) {
   ensureMeshoptDecoder();
   const manager = THREE.DefaultLoadingManager;
   const gltfLoader: any = new (MeshoptGLTFLoaderV2 as any)(manager);
   const texLoader: any = new (THREE as any).TextureLoader(manager);
 
-  const tasks = urls.map(async (u) => {
-    const e = ext(u);
-    try {
-      if (e === 'glb' || e === 'gltf') {
-        const t0 = Date.now(); await gltfLoader.loadAsync(u); console.log('[LOADER] gltf', u, (Date.now()-t0)+'ms');
-        return;
-      }
-      if (e === 'jpg' || e === 'jpeg' || e === 'png' || e === 'webp') {
-        const t0 = Date.now(); await texLoader.loadAsync(u); console.log('[LOADER] tex', u, (Date.now()-t0)+'ms');
-        return;
-      }
-    } catch (e: any) {
-        // capture real loader error
-        throw e;
-      }
-  });
+  const maxGlb = Math.max(0, Math.min(10, Number(opts?.maxGlb ?? 3)));
 
-  await Promise.all(tasks);
+  // 1) textures first (cheap)
+  for (const u of urls) {
+    const e = ext(u);
+    if (e === 'jpg' || e === 'jpeg' || e === 'png' || e === 'webp') {
+      const t0 = Date.now();
+      await texLoader.loadAsync(u);
+      console.log('[LOADER] tex', u, (Date.now() - t0) + 'ms');
+    }
+  }
+
+  // 2) GLBs sequential with a hard cap (prevents iOS OOM)
+  let glbCount = 0;
+  for (const u of urls) {
+    const e = ext(u);
+    if (e === 'glb' || e === 'gltf') {
+      glbCount += 1;
+      if (glbCount > maxGlb) break;
+      const t0 = Date.now();
+      await gltfLoader.loadAsync(u);
+      console.log('[LOADER] gltf', u, (Date.now() - t0) + 'ms');
+    }
+  }
 }
 
 function ext(url?: string) {
@@ -85,7 +91,7 @@ export default function FalloutLoaderOverlay(props: Props) {
         }
 
         try {
-          await preloadAllAssets(urls);
+          await preloadAllAssets(urls, { maxGlb: 3 });
         } catch (e: any) {
           const msg = String(e?.message ?? e ?? 'unknown error');
           try { console.log('[LOADER_ERR]', msg); } catch {}

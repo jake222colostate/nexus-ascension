@@ -37,5 +37,25 @@ export function buildAssetManifest(worldUris: any): Record<WorldKey, AssetDescri
 
 export function buildWorldEntryAssets(world: Exclude<WorldKey, 'core'>, worldUris: any): AssetDescriptor[] {
   const m = buildAssetManifest(worldUris);
-  return world === 'fantasy' ? [...m.core, ...m.fantasy] : [...m.core, ...m.skybase];
+
+  // The goal of "world entry" is: fast + stable on iOS.
+  // Do NOT parse huge GLBs here (mountains/forests/monster rigs/animations).
+  // Those should load lazily after first frame inside the world.
+  if (world === 'fantasy') {
+    const pick = (id: string) => m.fantasy.find(a => a.id === id);
+    const out: AssetDescriptor[] = [];
+
+    // Always include core skybox texture (cheap)
+    out.push(...m.core);
+
+    // Minimal "first frame" set
+    for (const id of ['gazebo', 'path', 'podium', 'crystal-1', 'fantasy-skybox']) {
+      const a = pick(id);
+      if (a) out.push(a);
+    }
+    return out;
+  }
+
+  // Skybase entry is already tiny
+  return [...m.core, ...m.skybase];
 }
