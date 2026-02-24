@@ -7,7 +7,9 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber/native';
 import { useProgress, Clone, useAnimations, useTexture } from '@react-three/drei/native';
 import * as THREE from 'three';
 import { SkeletonUtils } from 'three-stdlib';
-import { markWorldPlayable, reportWorldGate, setWorldError, setWorldPhase } from '../../../loading/worldLoadState';
+import { markCanvasMounted, markInteractive, markSceneReady, setWorldError } from '../../../loading/worldLoadState';
+import { getFantasyDeferredAssets } from '../fantasyLoadPlan';
+import { preloadCriticalWorldAssets } from '../../../loading/worldAssetPipeline';
 
 
 let __fireballTex: any = null;
@@ -803,41 +805,25 @@ const fpsAccRef = useRef({ t: 0, frames: 0, worstMs: 0 });
   useEffect(() => {
     let alive = true;
     console.log('[ASSET_URI] fantasy', { mountain: MOUNTAIN_URL(), gazebo: GAZEBO_URL(), path: PATH_GLB_URL(), podium: PODIUM_URL(), staff: STAFF_URL(), monsterModel: MONSTER1_MODEL_URL() });
+
     const q = async () => {
       props.onReady?.();
-      reportWorldGate('fantasy', 'scene-mounted');
-      setWorldPhase('fantasy', 'stage0-canvas', 0.1);
-      try { await new Promise((r) => setTimeout(r, 0)); } catch {}
-      if (!alive) return;
       setBootPhase(1);
-      setWorldPhase('fantasy', 'stage1-near-chunk', 0.35);
+      markSceneReady('fantasy');
 
-      for (const u of [GAZEBO_URL(), PATH_GLB_URL(), PODIUM_URL(), CRYSTAL1_URL(), STAFF_URL()]) {
-        if (!u) continue;
-        try { preloadGLTFMeshopt(u as any); } catch {}
-        try { await new Promise((r) => setTimeout(r, 120)); } catch {}
-        if (!alive) return;
-      }
+      const deferred = getFantasyDeferredAssets();
+      await new Promise((r) => setTimeout(r, 50));
+      if (!alive) return;
       setBootPhase(2);
-      setWorldPhase('fantasy', 'stage2-props', 0.6);
-
-      for (const u of [FOREST_FOREST_TREE_URL(), MOUNTAIN_URL()]) {
-        if (!u) continue;
-        try { preloadGLTFMeshopt(u as any); } catch {}
-        try { await new Promise((r) => setTimeout(r, 80)); } catch {}
+      preloadCriticalWorldAssets('fantasy', deferred).then(() => {
         if (!alive) return;
-      }
-      setBootPhase(3);
-      setWorldPhase('fantasy', 'stage3-streaming', 0.9);
-
-      setTimeout(() => {
-        for (const u of [MONSTER1_MODEL_URL(), MONSTER1_WALK_URL(), MONSTER1_RUN_URL(), MONSTER1_ATTACK_URL()]) {
-          if (!u) continue;
-          try { preloadGLTFMeshopt(u as any); } catch {}
-        }
-        console.log('[PERF] fantasy deferred monster preload queued');
-      }, 900);
+        setBootPhase(3);
+        console.log('[PERF] fantasy deferred preload complete');
+      }).catch((error) => {
+        console.error('[PERF] fantasy deferred preload error', error);
+      });
     };
+
     q();
     return () => { alive = false; };
   }, []);
@@ -945,8 +931,6 @@ const monument = useMemo(() => ({ id: 'monument_1', side: 1 as 1, z: -320 }), []
     try {
       if (!firstFrameRef.current) {
         firstFrameRef.current = true;
-        reportWorldGate('fantasy', 'first-frame');
-        reportWorldGate('fantasy', 'world-visible');
       }
       if (__DEV__) {
         const ms = dt * 1000;
@@ -1237,9 +1221,7 @@ spawnT.current += stepDt;
       camera.quaternion.setFromEuler(new THREE.Euler(pitch, yaw, 0, 'YXZ'));
       if (!playableSentRef.current && firstFrameRef.current && bootPhase >= 1) {
         playableSentRef.current = true;
-        reportWorldGate('fantasy', 'controls-ready');
-        setWorldPhase('fantasy', 'playable', 1);
-        markWorldPlayable('fantasy');
+        markInteractive('fantasy');
       }
     } catch (e) {
       if (!hadRuntimeErr.current) {
@@ -1275,7 +1257,7 @@ spawnT.current += stepDt;
       {chunks.map((i) => {
         const chunkIdx = baseChunk + i;
         const centerZ = -(chunkIdx * CHUNK_LEN) - (CHUNK_LEN / 2);
-        return <Chunk key={`c_${chunkIdx}`} idx={chunkIdx} centerZ={centerZ} showGazebo={showGazebo} onMountains={onMountains} onTrees={onTrees} showProps={bootPhase >= 1} showTrees={bootPhase >= 2} showMountains={bootPhase >= 2} />;
+        return <Chunk key={`c_${chunkIdx}`} idx={chunkIdx} centerZ={centerZ} showGazebo={showGazebo} onMountains={onMountains} onTrees={onTrees} showProps={bootPhase >= 1} showTrees={bootPhase >= 2} showMountains={bootPhase >= 1} />;
       })}
 
       {podiums.map((pd) => {
@@ -1326,7 +1308,7 @@ spawnT.current += stepDt;
               <circleGeometry args={[e.kind === 'boss' ? 1.6 : 0.9, 24]} />
               <meshBasicMaterial transparent opacity={0.22} color={'#000'} depthWrite={false} />
             </mesh>
-            {bootPhase >= 2 ? <Monster1GLB
+            {bootPhase >= 3 ? <Monster1GLB
               position={[e.pos.x, e.pos.y, e.pos.z]}
               scale={e.kind === 'boss' ? 1.3 : 0.7}
               rotationY={e.ry || 0}
@@ -1555,7 +1537,7 @@ function FantasyWorld3D(props: {
         style={{ flex: 1 }}
         gl={{ antialias: false, powerPreference: 'low-power' }}
         onCreated={({ gl }) => { try { (gl as any).setClearColor?.("#0a0f18", 1); } catch (e) {}
-          reportWorldGate('fantasy', 'canvas-mounted');
+          markCanvasMounted('fantasy');
         }}
         camera={{ position: [0, 1.55, 0], fov: 65 }}
       >

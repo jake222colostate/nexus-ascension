@@ -4,12 +4,11 @@ import { Text, View, StyleSheet } from 'react-native';
 import { Canvas, useThree } from '@react-three/fiber/native';
 import { Clone } from '@react-three/drei/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { preloadGLTFMeshopt, useGLTFMeshopt } from '../../loading/meshoptSetup';
-import { reportWorldGate } from '../../loading/worldLoadState';
+import { useGLTFMeshopt } from '../../loading/meshoptSetup';
 
 type AssetDescriptor = { id?: string; url: string; kind?: string };
 
-const EXCLUDED_PREVIEW = ['mountain', 'skybox', 'monster', 'attack', 'walk', 'run'];
+const FIXED_PREVIEW_KEY = 'gazebo';
 
 function ext(url?: string) {
   const s = String(url ?? '');
@@ -65,37 +64,32 @@ export default function FalloutLoaderOverlay(props: Props) {
     [props.assets],
   );
 
-  const preview = useMemo(() => {
-    const candidates = props.assets.filter((a) => {
-      const e = ext(a.url);
-      if (!(e === 'glb' || e === 'gltf')) return false;
-      const key = `${a.id ?? ''} ${a.url}`.toLowerCase();
-      return !EXCLUDED_PREVIEW.some((x) => key.includes(x));
-    });
-    if (!candidates.length) return null;
-    return candidates[Math.floor(Math.random() * candidates.length)];
-  }, [props.assets]);
+  const previewUriRef = useRef<string | null>(null);
+  if (!previewUriRef.current) {
+    const fixed = props.assets.find((a) => (`${a.id ?? ''}`.toLowerCase().includes(FIXED_PREVIEW_KEY) || a.url.toLowerCase().includes(FIXED_PREVIEW_KEY)) && ['glb', 'gltf'].includes(ext(a.url)));
+    const fallback = props.assets.find((a) => ['glb', 'gltf'].includes(ext(a.url)));
+    previewUriRef.current = fixed?.url ?? fallback?.url ?? null;
+  }
 
-  const [readyCount, setReadyCount] = useState(0);
   const [zoom, setZoom] = useState(0.35);
-  const [yaw, setYaw] = useState(0);
+  const [yawOffset, setYawOffset] = useState(0);
+  const [autoYaw, setAutoYaw] = useState(0);
   const fired = useRef(false);
   const gesture = useRef({ lookActive: false, lookTouch: -1, x: 0, pinchActive: false, pinchDist0: 0, zoom0: 0 });
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      let done = 0;
-      for (const u of entryUrls) {
-        try { if (ext(u) === 'glb' || ext(u) === 'gltf') preloadGLTFMeshopt(u as any); } catch {}
-        done += 1;
-        if (!cancelled) setReadyCount(done);
-        await new Promise((r) => setTimeout(r, 16));
-      }
-      if (props.world) reportWorldGate(props.world, 'entry-assets', `queued=${done}`);
-    })();
-    return () => { cancelled = true; };
-  }, [entryUrls, props.world]);
+    let raf = 0;
+    let last = Date.now();
+    const tick = () => {
+      const now = Date.now();
+      const dt = (now - last) / 1000;
+      last = now;
+      setAutoYaw((v) => v + dt * 0.5);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, []);
 
   useEffect(() => {
     if (!props.playable || fired.current) return;
@@ -103,7 +97,7 @@ export default function FalloutLoaderOverlay(props: Props) {
     props.onDone();
   }, [props.playable, props.onDone]);
 
-  const pct = Math.max(0, Math.min(100, Math.round((props.progress ?? (readyCount / Math.max(1, entryUrls.length))) * 100)));
+  const pct = Math.max(0, Math.min(100, Math.round((props.progress ?? 0) * 100)));
   const lightSeed = useMemo(() => ({ x: (Math.random() - 0.5) * 10, y: 5 + Math.random() * 7, z: (Math.random() - 0.5) * 10 }), []);
 
   return (
@@ -144,21 +138,21 @@ export default function FalloutLoaderOverlay(props: Props) {
           }
           const dx = x - gesture.current.x;
           gesture.current.x = x;
-          setYaw((v) => v - dx * 0.012);
+          setYawOffset((v) => v - dx * 0.012);
         }
       }}
       onResponderRelease={() => { gesture.current.lookActive = false; gesture.current.pinchActive = false; }}
       onResponderTerminate={() => { gesture.current.lookActive = false; gesture.current.pinchActive = false; }}
     >
-      {preview ? (
+      {previewUriRef.current ? (
         <Canvas style={S.canvasFill} camera={{ fov: 50, position: [3, 1.5, 3] }}>
           <ambientLight intensity={0.9} />
           <directionalLight position={[lightSeed.x, lightSeed.y, lightSeed.z]} intensity={1.2} />
-          <PreviewModel uri={preview.url} yaw={yaw} zoom={zoom} />
+          <PreviewModel uri={previewUriRef.current} yaw={autoYaw + yawOffset} zoom={zoom} />
         </Canvas>
       ) : null}
 
-      <View style={[S.bottom, { paddingBottom: Math.max(14, insets.bottom + 10) }]}>
+      <View style={[S.bottom, { paddingBottom: Math.max(14, insets.bottom + 10) }]}> 
         <Text style={S.title}>{props.title ?? 'Loading world…'}</Text>
         <Text style={S.sub}>{props.subtitle ?? 'Preparing first-frame assets…'}</Text>
         <Text style={S.sub}>Phase: {props.error ? 'error' : (props.phase ?? 'boot')}</Text>

@@ -13,7 +13,9 @@ import SkybaseWorld3D from './src/worlds/skybase/SkybaseWorld3D';
 import { GameHUD } from './src/ui/hud/GameHUD';
 import { buildWorldEntryAssets } from './src/assets/assetManifest';
 import { downloadAllWorldAssets, getWorldUris, hasResolvedWorldUris } from './src/assets/worldUris';
-import { markWorldPlayable, resetWorldReady, useWorldReadiness } from './src/loading/worldLoadState';
+import { beginWorldLoad, markInteractive, markWorldPlayable, resetWorldReady, useWorldReadiness } from './src/loading/worldLoadState';
+import { preloadCriticalWorldAssets } from './src/loading/worldAssetPipeline';
+import { getFantasyCriticalAssets } from './src/worlds/fantasy/fantasyLoadPlan';
 
 
 const __origLog = console.log.bind(console);
@@ -201,6 +203,15 @@ function HomeScreen({ navigation }: HomeScreenProps) {
       console.warn('[NAV_BLOCKED] home route missing', { target, routeNames });
       return;
     }
+
+    if (target === 'LoadingFantasy') {
+      const critical = getFantasyCriticalAssets();
+      beginWorldLoad('fantasy', critical);
+      preloadCriticalWorldAssets('fantasy', critical).catch((error) => {
+        console.error('[LOAD_PREWARM_FAIL] fantasy', error);
+      });
+    }
+
     console.log('[NAV_HOME_PRESS]', { target });
     navigation.navigate(target);
   };
@@ -1130,12 +1141,12 @@ function CombatWorld({ cfg }: { cfg: CombatConfig }) {
 
           <View style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 }} pointerEvents="box-none">
 
-        {!fantasyReady.playable ? (
+        {fantasyReady.phase !== 'interactive' ? (
           <FalloutLoaderOverlay
             world={'fantasy'}
             assets={buildWorldEntryAssets('fantasy', getWorldUris())}
             onDone={() => undefined}
-            playable={fantasyReady.playable}
+            playable={fantasyReady.phase === 'interactive'}
             phase={fantasyReady.phase}
             progress={fantasyReady.progress}
             error={fantasyReady.error}
@@ -1184,15 +1195,24 @@ function LoadingFantasyScreen({ navigation }: any) {
   const fantasyReady = useWorldReadiness('fantasy');
 
   useEffect(() => {
-    resetWorldReady('fantasy');
+    const critical = getFantasyCriticalAssets();
+    beginWorldLoad('fantasy', critical);
+    preloadCriticalWorldAssets('fantasy', critical).catch((error) => {
+      console.error('[LOAD_PRELOAD_FAIL] fantasy', error);
+    });
   }, []);
+
+  useEffect(() => {
+    if (fantasyReady.phase !== 'scene-ready') return;
+    navigation.replace('Fantasy');
+  }, [fantasyReady.phase, navigation]);
 
   useEffect(() => {
     if (!fantasyReady.error) return;
     console.warn('[NAV_BLOCKED] fantasy loading halted', { reason: fantasyReady.error });
     const fallback = setTimeout(() => {
       console.warn('[NAV_FALLBACK] forcing fantasy playable after loader error');
-      markWorldPlayable('fantasy');
+      markInteractive('fantasy');
       navigation.replace('Fantasy');
     }, 3000);
     return () => clearTimeout(fallback);
@@ -1212,7 +1232,7 @@ function LoadingFantasyScreen({ navigation }: any) {
       <FalloutLoaderOverlay
         world={'fantasy'}
         assets={buildWorldEntryAssets('fantasy', getWorldUris())}
-        playable={fantasyReady.playable}
+        playable={fantasyReady.phase === 'interactive'}
         phase={fantasyReady.phase}
         progress={fantasyReady.progress}
         error={fantasyReady.error}
