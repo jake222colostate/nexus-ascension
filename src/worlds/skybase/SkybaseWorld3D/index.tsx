@@ -5,14 +5,15 @@ import { useTexture } from '@react-three/drei/native';
 import { StyleSheet, View } from 'react-native';
 import { Canvas, useFrame } from '@react-three/fiber/native';
 import * as THREE from 'three';
-import { WORLD_URIS } from '../../../assets/worldUris';
+import { getBestAssetUri } from '../../../assets/worldUris';
+import { markWorldPlayable, setWorldPhase } from '../../../loading/worldLoadState';
 
 function clamp(v: number, a: number, b: number) { return Math.max(a, Math.min(b, v)); }
 
 const ZOOM_MIN = 16;
 const ZOOM_MAX = 90;
 
-const SKYBOX_URL = WORLD_URIS.skybase.skybox;
+const SKYBOX_URL = getBestAssetUri('skybase', 'skybox');
 
 function SkyboxAndFog() {
   const { scene } = useThree();
@@ -53,6 +54,7 @@ function Scene({
   pitchRef: React.MutableRefObject<number>;
   radiusRef: React.MutableRefObject<number>;
 }) {
+  const readyRef = useRef(false);
   useFrame(({ camera }) => {
     const yaw = yawRef.current;
     const pitch = pitchRef.current;
@@ -67,6 +69,11 @@ function Scene({
 
     camera.position.set(x, y, z);
     camera.lookAt(0, targetY + 1.0, 0);
+    if (!readyRef.current) {
+      readyRef.current = true;
+      setWorldPhase('skybase', 'playable', 1);
+      markWorldPlayable('skybase');
+    }
   });
 
   const ground = useMemo(() => new THREE.CylinderGeometry(22, 22, 0.6, 48, 1, false), []);
@@ -118,6 +125,7 @@ export default function SkybaseWorld3D(props: { layer: number; layerHeight: numb
   const pinchRef = useRef<{ active: boolean; dist0: number; r0: number }>({ active: false, dist0: 0, r0: 0 });
 
   const targetY = props.layerHeight ?? 0;
+  useEffect(() => { setWorldPhase('skybase', 'stage0-canvas', 0.3); }, []);
 
   const handleTouches = (touches: any[]) => {
     const ts = touches || [];
