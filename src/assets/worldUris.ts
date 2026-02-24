@@ -6,6 +6,7 @@ const modules = {
   },
   fantasy: {
     mountain: require('../../assets/glb/fantasy3d/mountain_v2.glb'),
+      mountainMobile: require('../../assets/glb/fantasy3d/mountain_v2_mobile.glb'),
     gazebo: require('../../assets/glb/fantasy3d/spawn_gazebo.glb'),
     path: require('../../assets/glb/fantasy3d/path.glb'),
     podium: require('../../assets/glb/fantasy3d/podium_v1.glb'),

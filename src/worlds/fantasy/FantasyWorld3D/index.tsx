@@ -151,7 +151,7 @@ const getFantasyUri = (k: keyof typeof WORLD_URIS.fantasy): string => {
   return String(resolved || fallback || '');
 };
 
-const MOUNTAIN_URL = () => getFantasyUri('mountain');
+const MOUNTAIN_URL = () => (getFantasyUri('mountainMobile') || getFantasyUri('mountain'));
 
 const GAZEBO_URL = () => getFantasyUri('gazebo');
 const PATH_GLB_URL = () => getFantasyUri('path');
