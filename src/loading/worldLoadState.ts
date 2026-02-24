@@ -155,10 +155,28 @@ type Snapshot = {
   progress: number;
   rawProgress: number;
   error?: string;
+  blockers: string[];
 };
 
 const __snapshotCache: Partial<Record<PlayableWorld, Snapshot>> = {};
 
+
+
+function describeMissingGates(world: PlayableWorld): string[] {
+  const s = states[world];
+  return s.requiredGates
+    .filter((g) => !s.gates[g])
+    .map((g) => {
+      if (g === 'entry-assets') return 'Waiting for asset URI resolution/cache queue';
+      if (g === 'canvas-mounted') return 'Waiting for GL canvas mount';
+      if (g === 'scene-mounted') return 'Waiting for scene graph mount';
+      if (g === 'first-frame') return 'Waiting for first rendered frame';
+      if (g === 'controls-ready') return 'Waiting for controls/input readiness';
+      if (g === 'world-visible') return 'Waiting for world visibility transition';
+      if (g === 'playable') return 'Waiting for gameplay systems ready';
+      return `Waiting for ${g}`;
+    });
+}
 function __getSnapshot(world: PlayableWorld): Snapshot {
   const s = states[world];
   const next: Snapshot = {
@@ -167,6 +185,7 @@ function __getSnapshot(world: PlayableWorld): Snapshot {
     progress: s.displayProgress,
     rawProgress: s.progress,
     error: s.error,
+    blockers: describeMissingGates(world),
   };
 
   const prev = __snapshotCache[world];
@@ -176,7 +195,8 @@ function __getSnapshot(world: PlayableWorld): Snapshot {
     prev.phase === next.phase &&
     prev.progress === next.progress &&
     prev.rawProgress === next.rawProgress &&
-    prev.error === next.error
+    prev.error === next.error &&
+    prev.blockers.join('|') === next.blockers.join('|')
   ) {
     return prev;
   }
