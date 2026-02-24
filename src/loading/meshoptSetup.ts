@@ -1,12 +1,10 @@
 import { useLoader } from '@react-three/fiber/native';
 import { useGLTF } from '@react-three/drei/native';
-import * as THREE from 'three';
 import { MeshoptDecoder } from 'meshoptimizer';
 import { MeshoptGLTFLoaderV2 } from './MeshoptGLTFLoaderV2';
 
-
-
-let didGlobal = false;
+let didInstall = false;
+let didLogInstall = false;
 let readyPromise: Promise<void> | null = null;
 
 function getReadyPromise(): Promise<void> {
@@ -18,18 +16,25 @@ function getReadyPromise(): Promise<void> {
   return readyPromise;
 }
 
-export function ensureMeshoptDecoder() {
-  if (didGlobal) return;
-  didGlobal = true;
+export function installMeshoptDecoder() {
+  if (didInstall) return;
+  didInstall = true;
   try {
     if ((useGLTF as any)?.setMeshoptDecoder && MeshoptDecoder) {
       (useGLTF as any).setMeshoptDecoder(MeshoptDecoder as any);
+      if (!didLogInstall) {
+        didLogInstall = true;
+        console.log('[meshopt] decoder installed');
+      }
     }
   } catch {}
 }
 
+// Backward-compatible alias while we migrate callsites.
+export const ensureMeshoptDecoder = installMeshoptDecoder;
+
 export function useGLTFMeshopt(url: any): any {
-  ensureMeshoptDecoder();
+  installMeshoptDecoder();
   const r: any = MeshoptDecoder as any;
   if (r?.ready && typeof r.ready.then === 'function') {
     if (!r._nexusReady) {
@@ -42,7 +47,7 @@ export function useGLTFMeshopt(url: any): any {
 }
 
 export function preloadGLTFMeshopt(url: any) {
-  ensureMeshoptDecoder();
+  installMeshoptDecoder();
   getReadyPromise().then(() => {
     (useLoader as any).preload(MeshoptGLTFLoaderV2 as any, url);
   });

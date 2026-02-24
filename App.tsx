@@ -1,6 +1,5 @@
 import './src/loading/runtimePolyfills';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import "./src/loading/meshoptSetup";
 import { AppState, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Canvas, useFrame } from '@react-three/fiber/native';
 import { NavigationContainer } from '@react-navigation/native';
@@ -8,7 +7,6 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import './src/loading/meshoptSetup';
 import FantasyWorld3D from './src/worlds/fantasy/FantasyWorld3D';
 import FalloutLoaderOverlay from './src/ui/loading/FalloutLoaderOverlay';
 import SkybaseWorld3D from './src/worlds/skybase/SkybaseWorld3D';

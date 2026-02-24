@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef } from "react";
-import { useGLTF, useAnimations } from "@react-three/drei/native";
+import { useAnimations } from "@react-three/drei/native";
 import { getBestAssetUri } from "../../../assets/worldUris";
+import { preloadGLTFMeshopt, useGLTFMeshopt } from "../../../loading/meshoptSetup";
 import * as THREE from "three";
 import { SkeletonUtils } from "three-stdlib";
 
@@ -13,12 +14,12 @@ const SUMMON_CAST1_URL = getBestAssetUri('fantasy', 'summonCast1');
 const SUMMON_CAST2_URL = getBestAssetUri('fantasy', 'summonCast2');
 const SUMMON_CAST3_URL = getBestAssetUri('fantasy', 'summonCast3');
 
-useGLTF.preload(SUMMON_BASE_URL as any);
-useGLTF.preload(SUMMON_WALK_URL as any);
-useGLTF.preload(SUMMON_RUN_URL as any);
-useGLTF.preload(SUMMON_CAST1_URL as any);
-useGLTF.preload(SUMMON_CAST2_URL as any);
-useGLTF.preload(SUMMON_CAST3_URL as any);
+preloadGLTFMeshopt(SUMMON_BASE_URL as any);
+preloadGLTFMeshopt(SUMMON_WALK_URL as any);
+preloadGLTFMeshopt(SUMMON_RUN_URL as any);
+preloadGLTFMeshopt(SUMMON_CAST1_URL as any);
+preloadGLTFMeshopt(SUMMON_CAST2_URL as any);
+preloadGLTFMeshopt(SUMMON_CAST3_URL as any);
 
 export default function Summon1Mage(props: {
   position: [number, number, number];
@@ -28,12 +29,12 @@ export default function Summon1Mage(props: {
 }) {
   const ref = useRef<THREE.Group>(null);
 
-  const baseG: any = useGLTF(SUMMON_BASE_URL as any);
-  const walkG: any = useGLTF(SUMMON_WALK_URL as any);
-  const runG: any = useGLTF(SUMMON_RUN_URL as any);
-  const c1G: any = useGLTF(SUMMON_CAST1_URL as any);
-  const c2G: any = useGLTF(SUMMON_CAST2_URL as any);
-  const c3G: any = useGLTF(SUMMON_CAST3_URL as any);
+  const baseG: any = useGLTFMeshopt(SUMMON_BASE_URL as any);
+  const walkG: any = useGLTFMeshopt(SUMMON_WALK_URL as any);
+  const runG: any = useGLTFMeshopt(SUMMON_RUN_URL as any);
+  const c1G: any = useGLTFMeshopt(SUMMON_CAST1_URL as any);
+  const c2G: any = useGLTFMeshopt(SUMMON_CAST2_URL as any);
+  const c3G: any = useGLTFMeshopt(SUMMON_CAST3_URL as any);
 
   const baseScene: any = (baseG && baseG.scene) ? baseG.scene : (Array.isArray(baseG) ? baseG[0]?.scene : null);
 
