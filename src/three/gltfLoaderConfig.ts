@@ -10,15 +10,46 @@ const MESHOPT_DEBUG =
   typeof globalThis !== 'undefined' &&
   !!(globalThis as any).__NEXUS_DEBUG_MESHOPT;
 
+function debugLog(message: string, extra?: unknown) {
+  if (!MESHOPT_DEBUG) return;
+  if (typeof extra === 'undefined') {
+    console.log(message);
+    return;
+  }
+  console.log(message, extra);
+}
+
 function markInstalled(loader: any) {
   loader.__nexusMeshoptInstalled = true;
   if (MESHOPT_DEBUG && !didLogAttach) {
     didLogAttach = true;
-    console.log('[meshopt] attached decoder to GLTFLoader instance');
+    console.log('[meshopt] configureGLTFLoader() setMeshoptDecoder executed on GLTFLoader instance');
   }
 }
 
+function invalidateGLTFCaches() {
+  const r3fUseLoader = useLoader as any;
+  if (typeof r3fUseLoader.clear === 'function') {
+    r3fUseLoader.clear(GLTFLoader);
+  }
+
+  const dreiUseGLTF = useGLTF as any;
+  if (typeof dreiUseGLTF.clear === 'function') {
+    try {
+      dreiUseGLTF.clear();
+    } catch {
+      // Some versions require a URL key; best-effort clear.
+    }
+  }
+
+  debugLog('[meshopt] installMeshoptDecoder() cleared cached GLTFLoader instances');
+}
+
 export function configureGLTFLoader(loader: GLTFLoader) {
+  debugLog('[meshopt] configureGLTFLoader() called', {
+    alreadyInstalled: !!(loader as any).__nexusMeshoptInstalled,
+  });
+
   const anyLoader = loader as any;
   if (anyLoader.__nexusMeshoptInstalled) return;
 
@@ -31,6 +62,10 @@ export function configureGLTFLoader(loader: GLTFLoader) {
 export function installMeshoptDecoder() {
   if (didInstall) return;
   didInstall = true;
+
+  debugLog('[meshopt] installMeshoptDecoder() ran before first GLB load');
+
+  invalidateGLTFCaches();
 
   // drei/native caches loaders internally; register decoder there too.
   if ((useGLTF as any)?.setMeshoptDecoder && MeshoptDecoder) {

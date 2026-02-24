@@ -1,6 +1,6 @@
-import { installMeshoptDecoder } from './src/loading/meshoptSetup';
+import { ensureMeshoptReady } from './src/loading/meshoptSetup';
 
-installMeshoptDecoder();
+void ensureMeshoptReady();
 
 import { registerRootComponent } from 'expo';
 
