@@ -2,160 +2,177 @@ import { useSyncExternalStore } from 'react';
 import type { WorldKey } from '../assets/assetManifest';
 
 export type PlayableWorld = Exclude<WorldKey, 'core'>;
+export type WorldLoadPhase = 'idle' | 'starting' | 'preloading' | 'canvas-mounted' | 'scene-ready' | 'interactive' | 'error';
 
-export type WorldGate =
-  | 'entry-assets'
-  | 'canvas-mounted'
-  | 'scene-mounted'
-  | 'first-frame'
-  | 'controls-ready'
-  | 'world-visible'
-  | 'playable';
-
-const REQUIRED_GATES: Record<PlayableWorld, WorldGate[]> = {
-  fantasy: ['entry-assets', 'canvas-mounted', 'scene-mounted', 'first-frame', 'controls-ready', 'world-visible', 'playable'],
-  skybase: ['entry-assets', 'canvas-mounted', 'scene-mounted', 'first-frame', 'controls-ready', 'world-visible', 'playable'],
+export type AssetProgressDetails = {
+  queued: number;
+  loaded: number;
+  failed: number;
+  currentAssetKey?: string;
 };
 
-type GateInfo = { at: number; detail?: string };
+type PhaseTimestamps = Partial<Record<Exclude<WorldLoadPhase, 'idle'>, number>>;
 
-type PhaseState = {
+type WorldLoadState = {
+  world: PlayableWorld;
+  phase: WorldLoadPhase;
+  progress: number;
   playable: boolean;
-  phase: string;
-  progress: number;        // 0..1 logical progress (gates/phase hints)
-  displayProgress: number; // smoothed 0..1 for UI
-  startedAt: number;
-  lastActivityAt: number;
-  playableAt?: number;
   error?: string;
-  requiredGates: WorldGate[];
-  gates: Partial<Record<WorldGate, GateInfo>>;
+  details: AssetProgressDetails;
+  startedAt: number;
+  timestamps: PhaseTimestamps;
+  criticalAssets: string[];
 };
 
-const states: Record<WorldKey, PhaseState> = {
-  core: { playable: true, phase: 'idle', progress: 1, displayProgress: 1, startedAt: Date.now(), lastActivityAt: Date.now(), requiredGates: [], gates: {} },
-  fantasy: { playable: false, phase: 'boot', progress: 0, displayProgress: 0, startedAt: Date.now(), lastActivityAt: Date.now(), requiredGates: [...REQUIRED_GATES.fantasy], gates: {} },
-  skybase: { playable: false, phase: 'boot', progress: 0, displayProgress: 0, startedAt: Date.now(), lastActivityAt: Date.now(), requiredGates: [...REQUIRED_GATES.skybase], gates: {} },
+const PHASE_ORDER: WorldLoadPhase[] = ['idle', 'starting', 'preloading', 'canvas-mounted', 'scene-ready', 'interactive', 'error'];
+
+const state: Record<PlayableWorld, WorldLoadState> = {
+  fantasy: makeInitialState('fantasy'),
+  skybase: makeInitialState('skybase'),
 };
 
 const listeners = new Set<() => void>();
-let progressTimer: ReturnType<typeof setInterval> | null = null;
-let watchdogTimer: ReturnType<typeof setInterval> | null = null;
+
+function makeInitialState(world: PlayableWorld): WorldLoadState {
+  return {
+    world,
+    phase: 'idle',
+    progress: 0,
+    playable: false,
+    details: { queued: 0, loaded: 0, failed: 0 },
+    startedAt: 0,
+    timestamps: {},
+    criticalAssets: [],
+  };
+}
 
 function emit() { listeners.forEach((l) => l()); }
 
-function ensureTimers() {
-  if (!progressTimer) {
-    progressTimer = setInterval(() => {
-      let dirty = false;
-      (Object.keys(REQUIRED_GATES) as PlayableWorld[]).forEach((world) => {
-        const s = states[world];
-        const target = s.playable ? 1 : Math.min(0.99, s.progress);
-        if (s.displayProgress + 0.0001 < target) {
-          s.displayProgress = Math.min(target, s.displayProgress + 0.01);
-          dirty = true;
-        }
-      });
-      if (dirty) emit();
-    }, 45);
-  }
-
-  if (!watchdogTimer) {
-    watchdogTimer = setInterval(() => {
-      const now = Date.now();
-      let dirty = false;
-      (Object.keys(REQUIRED_GATES) as PlayableWorld[]).forEach((world) => {
-        const s = states[world];
-        if (s.playable || s.error) return;
-        if (now - s.lastActivityAt < 45000) return;
-        const missing = s.requiredGates.filter((g) => !s.gates[g]);
-        if (!missing.length) return;
-        s.error = `Timed out waiting for: ${missing.join(', ')}`;
-        s.phase = 'error';
-        console.error(`[LOAD_ERROR] ${world} ${s.error}`);
-        dirty = true;
-      });
-      if (dirty) emit();
-    }, 1000);
-  }
+function phaseIndex(phase: WorldLoadPhase): number {
+  return PHASE_ORDER.indexOf(phase);
 }
 
-ensureTimers();
+function transitionPhase(world: PlayableWorld, next: WorldLoadPhase, reason?: string) {
+  const s = state[world];
+  if (s.phase === next) return;
+  const prev = s.phase;
+  if (phaseIndex(next) < phaseIndex(prev) && next !== 'error') return;
+  s.phase = next;
+  if (next !== 'idle') s.timestamps[next] = Date.now();
+  if (next === 'interactive') {
+    s.playable = true;
+    s.progress = 1;
+    const totalMs = s.startedAt ? Date.now() - s.startedAt : 0;
+    console.log(`[LOAD_DONE] ${world} interactive_ms=${totalMs}`);
+  }
+  console.log(`[LOAD_PHASE] ${world} ${prev} -> ${next}${reason ? ` (${reason})` : ''}`);
+}
 
 function recomputeProgress(world: PlayableWorld) {
-  const s = states[world];
-  const total = s.requiredGates.length;
-  const done = s.requiredGates.filter((g) => !!s.gates[g]).length;
-  const prevProgress = s.progress;
-  s.progress = total ? done / total : 1;
-  if (s.playable) s.progress = 1;
-  if (s.progress > prevProgress + 1e-6) s.lastActivityAt = Date.now();
+  const s = state[world];
+  const ratio = s.details.queued > 0 ? s.details.loaded / s.details.queued : 0;
+  const phaseFloor: Record<WorldLoadPhase, number> = {
+    idle: 0,
+    starting: 0.03,
+    preloading: 0.08,
+    'canvas-mounted': 0.75,
+    'scene-ready': 0.92,
+    interactive: 1,
+    error: Math.min(0.99, s.progress),
+  };
+  const preloadCap = s.phase === 'preloading' ? 0.7 : 0.9;
+  const fromAssets = Math.min(preloadCap, 0.08 + ratio * 0.62);
+  s.progress = Math.max(phaseFloor[s.phase], fromAssets, s.phase === 'interactive' ? 1 : 0);
 }
 
-export function resetWorldReady(world: PlayableWorld) {
-  states[world] = {
+export function beginWorldLoad(world: PlayableWorld, assetList: Array<{ key: string; uri: string }>) {
+  const now = Date.now();
+  state[world] = {
+    world,
+    phase: 'starting',
+    progress: 0.03,
     playable: false,
-    phase: 'boot',
-    progress: 0,
-    displayProgress: 0,
-    startedAt: Date.now(),
-    lastActivityAt: Date.now(),
-    requiredGates: [...REQUIRED_GATES[world]],
-    gates: {},
+    details: { queued: assetList.length, loaded: 0, failed: 0 },
+    startedAt: now,
+    timestamps: { starting: now },
+    criticalAssets: assetList.map((a) => a.key),
     error: undefined,
   };
-  __snapshotCache[world] = undefined;
-  emit();
-}
-
-export function setWorldPhase(world: PlayableWorld, phaseName: string, progressHint?: number) {
-  const s = states[world];
-  s.phase = phaseName;
-  s.lastActivityAt = Date.now();
-  if (typeof progressHint === 'number') {
-    const bounded = Math.max(0, Math.min(0.99, progressHint));
-    s.progress = Math.max(s.progress, bounded);
-  }
-  __snapshotCache[world] = undefined;
-  emit();
-}
-
-export function reportWorldGate(world: PlayableWorld, gate: WorldGate, detail?: string) {
-  const s = states[world];
-  if (!s.gates[gate]) {
-    s.gates[gate] = { at: Date.now(), detail };
-    s.lastActivityAt = Date.now();
-    console.log(`[LOAD_GATE] ${world} gate=${gate}${detail ? ` detail=${detail}` : ''}`);
-  }
-  if (gate === 'playable') {
-    s.playable = true;
-    s.playableAt = Date.now();
-    s.phase = 'playable';
-    s.progress = 1;
-    s.displayProgress = 1;
-  }
-  s.error = undefined;
+  console.log(`[LOAD_START] ${world} t0=${now} critical=${assetList.map((a) => `${a.key}:${a.uri}`).join(',')}`);
+  transitionPhase(world, 'preloading');
   recomputeProgress(world);
-  __snapshotCache[world] = undefined;
+  emit();
+}
+
+export function setAssetProgress(world: PlayableWorld, progress: { loaded: number; queued: number; failed?: number; currentAssetKey?: string }) {
+  const s = state[world];
+  s.details = {
+    queued: Math.max(0, progress.queued),
+    loaded: Math.max(0, progress.loaded),
+    failed: Math.max(0, progress.failed ?? s.details.failed),
+    currentAssetKey: progress.currentAssetKey,
+  };
+  if (s.phase === 'starting' || s.phase === 'idle') transitionPhase(world, 'preloading');
+  recomputeProgress(world);
+  emit();
+}
+
+export function markCanvasMounted(world: PlayableWorld) {
+  transitionPhase(world, 'canvas-mounted');
+  recomputeProgress(world);
+  emit();
+}
+
+export function markSceneReady(world: PlayableWorld) {
+  transitionPhase(world, 'scene-ready');
+  recomputeProgress(world);
+  emit();
+}
+
+export function markInteractive(world: PlayableWorld) {
+  transitionPhase(world, 'interactive');
+  recomputeProgress(world);
   emit();
 }
 
 export function setWorldError(world: PlayableWorld, reason: string) {
-  const s = states[world];
+  const s = state[world];
   s.error = reason;
-  s.lastActivityAt = Date.now();
-  s.phase = 'error';
+  transitionPhase(world, 'error', reason);
+  recomputeProgress(world);
   console.error(`[LOAD_ERROR] ${world} ${reason}`);
-  __snapshotCache[world] = undefined;
   emit();
 }
 
-export function markWorldPlayable(world: PlayableWorld) { reportWorldGate(world, 'playable'); }
-export function markWorldReady(world: PlayableWorld) { markWorldPlayable(world); }
-export function isWorldReady(world: PlayableWorld) { return states[world].playable; }
+// Compatibility wrappers for existing callers.
+export function resetWorldReady(world: PlayableWorld) {
+  state[world] = makeInitialState(world);
+  emit();
+}
 
-// ---- useSyncExternalStore snapshot caching ----
-// React requires getSnapshot to be referentially stable when values are unchanged.
+export function setWorldPhase(world: PlayableWorld, phaseName: string, progressHint?: number) {
+  const s = state[world];
+  if (typeof progressHint === 'number') s.progress = Math.max(s.progress, Math.min(0.99, Math.max(0, progressHint)));
+  if (phaseName.includes('canvas')) markCanvasMounted(world);
+  if (phaseName.includes('scene')) markSceneReady(world);
+  emit();
+}
+
+export function reportWorldGate(world: PlayableWorld, gate: string, detail?: string) {
+  if (gate === 'canvas-mounted') markCanvasMounted(world);
+  if (gate === 'scene-mounted') markSceneReady(world);
+  if (gate === 'controls-ready' || gate === 'playable') markInteractive(world);
+  if (gate === 'entry-assets') {
+    const queued = state[world].details.queued || 1;
+    setAssetProgress(world, { loaded: queued, queued, currentAssetKey: detail });
+  }
+}
+
+export function markWorldPlayable(world: PlayableWorld) { markInteractive(world); }
+export function markWorldReady(world: PlayableWorld) { markInteractive(world); }
+export function isWorldReady(world: PlayableWorld) { return state[world].phase === 'interactive'; }
+
 type Snapshot = {
   playable: boolean;
   phase: string;
@@ -163,53 +180,17 @@ type Snapshot = {
   rawProgress: number;
   error?: string;
   blockers: string[];
+  details: AssetProgressDetails;
 };
 
-const __snapshotCache: Partial<Record<PlayableWorld, Snapshot>> = {};
-
-
-
-function describeMissingGates(world: PlayableWorld): string[] {
-  const s = states[world];
-  return s.requiredGates
-    .filter((g) => !s.gates[g])
-    .map((g) => {
-      if (g === 'entry-assets') return 'Waiting for asset URI resolution/cache queue';
-      if (g === 'canvas-mounted') return 'Waiting for GL canvas mount';
-      if (g === 'scene-mounted') return 'Waiting for scene graph mount';
-      if (g === 'first-frame') return 'Waiting for first rendered frame';
-      if (g === 'controls-ready') return 'Waiting for controls/input readiness';
-      if (g === 'world-visible') return 'Waiting for world visibility transition';
-      if (g === 'playable') return 'Waiting for gameplay systems ready';
-      return `Waiting for ${g}`;
-    });
-}
-function __getSnapshot(world: PlayableWorld): Snapshot {
-  const s = states[world];
-  const next: Snapshot = {
-    playable: s.playable,
-    phase: s.phase,
-    progress: s.displayProgress,
-    rawProgress: s.progress,
-    error: s.error,
-    blockers: describeMissingGates(world),
-  };
-
-  const prev = __snapshotCache[world];
-  if (
-    prev &&
-    prev.playable === next.playable &&
-    prev.phase === next.phase &&
-    prev.progress === next.progress &&
-    prev.rawProgress === next.rawProgress &&
-    prev.error === next.error &&
-    prev.blockers.join('|') === next.blockers.join('|')
-  ) {
-    return prev;
-  }
-
-  __snapshotCache[world] = next;
-  return next;
+function blockersFor(world: PlayableWorld): string[] {
+  const s = state[world];
+  if (s.phase === 'preloading' && s.details.currentAssetKey) return [`Loading ${s.details.currentAssetKey}`];
+  if (s.phase === 'preloading') return ['Loading critical GLBs'];
+  if (s.phase === 'canvas-mounted') return ['Waiting for scene assembly'];
+  if (s.phase === 'scene-ready') return ['Waiting for first interactive frame'];
+  if (s.phase === 'error') return [s.error ?? 'Loading error'];
+  return [];
 }
 
 export function useWorldReadiness(world: PlayableWorld) {
@@ -218,6 +199,17 @@ export function useWorldReadiness(world: PlayableWorld) {
       listeners.add(cb);
       return () => listeners.delete(cb);
     },
-    () => __getSnapshot(world),
+    () => {
+      const s = state[world];
+      return {
+        playable: s.phase === 'interactive',
+        phase: s.phase,
+        progress: s.progress,
+        rawProgress: s.progress,
+        error: s.error,
+        blockers: blockersFor(world),
+        details: s.details,
+      } as Snapshot;
+    },
   );
 }
