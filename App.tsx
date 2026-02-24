@@ -5,6 +5,7 @@ import { AppState, Modal, Pressable, ScrollView, StyleSheet, Text, View } from '
 import { Canvas, useFrame } from '@react-three/fiber/native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import './src/loading/meshoptSetup';
@@ -14,7 +15,7 @@ import SkybaseWorld3D from './src/worlds/skybase/SkybaseWorld3D';
 import { GameHUD } from './src/ui/hud/GameHUD';
 import { buildWorldEntryAssets } from './src/assets/assetManifest';
 import { downloadAllWorldAssets, getWorldUris, hasResolvedWorldUris } from './src/assets/worldUris';
-import { isWorldReady, markWorldPlayable, resetWorldReady, useWorldReadiness } from './src/loading/worldLoadState';
+import { markWorldPlayable, resetWorldReady, useWorldReadiness } from './src/loading/worldLoadState';
 
 
 const __origLog = console.log.bind(console);
@@ -190,7 +191,22 @@ function useStoredNumber(key: string, fallback: number) {
   return api;
 }
 
-function HomeScreen({ navigation }: any) {
+type HomeScreenProps = NativeStackScreenProps<RootStackParamList, 'Home'>;
+
+function HomeScreen({ navigation }: HomeScreenProps) {
+  const fantasyReady = useWorldReadiness('fantasy');
+  const skyReady = useWorldReadiness('skybase');
+
+  const goTo = (target: keyof RootStackParamList) => {
+    const routeNames = navigation.getState().routeNames;
+    if (!routeNames.includes(target)) {
+      console.warn('[NAV_BLOCKED] home route missing', { target, routeNames });
+      return;
+    }
+    console.log('[NAV_HOME_PRESS]', { target });
+    navigation.navigate(target);
+  };
+
   return (
     <SafeAreaView edges={[]} style={styles.safe}>
       <View style={styles.container}>
@@ -200,21 +216,21 @@ function HomeScreen({ navigation }: any) {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Quick Start</Text>
 
-          <Pressable style={styles.buttonPrimary} onPress={() => navigation.navigate(isWorldReady('fantasy') ? 'Fantasy' : 'LoadingFantasy')}>
+          <Pressable style={styles.buttonPrimary} onPress={() => goTo(fantasyReady.playable ? 'Fantasy' : 'LoadingFantasy')}>
             <Text style={styles.buttonPrimaryText}>Play (Fantasy Valley)</Text>
           </Pressable>
 
           <View style={styles.row}>
-            <Pressable style={styles.button} onPress={() => navigation.navigate(isWorldReady('skybase') ? 'Skybase' : 'LoadingSkybase')}>
+            <Pressable style={styles.button} onPress={() => goTo(skyReady.playable ? 'Skybase' : 'LoadingSkybase')}>
               <Text style={styles.buttonText}>Skybase</Text>
             </Pressable>
 
-            <Pressable style={styles.button} onPress={() => navigation.navigate('Hub')}>
+            <Pressable style={styles.button} onPress={() => goTo('Hub')}>
               <Text style={styles.buttonText}>Hub</Text>
             </Pressable>
           </View>
 
-          <Pressable style={styles.buttonGhost} onPress={() => navigation.navigate('Settings')}>
+          <Pressable style={styles.buttonGhost} onPress={() => goTo('Settings')}>
             <Text style={styles.buttonGhostText}>Settings</Text>
           </Pressable>
         </View>
@@ -1173,6 +1189,17 @@ function LoadingFantasyScreen({ navigation }: any) {
     resetWorldReady('fantasy');
   }, []);
 
+  useEffect(() => {
+    if (!fantasyReady.error) return;
+    console.warn('[NAV_BLOCKED] fantasy loading halted', { reason: fantasyReady.error });
+    const fallback = setTimeout(() => {
+      console.warn('[NAV_FALLBACK] forcing fantasy playable after loader error');
+      markWorldPlayable('fantasy');
+      navigation.replace('Fantasy');
+    }, 3000);
+    return () => clearTimeout(fallback);
+  }, [fantasyReady.error, navigation]);
+
   return (
     <View style={{ flex: 1, backgroundColor: '#0a0f18' }}>
       <FantasyWorld3D
@@ -1207,6 +1234,17 @@ function LoadingSkybaseScreen({ navigation }: any) {
   useEffect(() => {
     resetWorldReady('skybase');
   }, []);
+
+  useEffect(() => {
+    if (!skyReady.error) return;
+    console.warn('[NAV_BLOCKED] skybase loading halted', { reason: skyReady.error });
+    const fallback = setTimeout(() => {
+      console.warn('[NAV_FALLBACK] forcing skybase playable after loader error');
+      markWorldPlayable('skybase');
+      navigation.replace('Skybase');
+    }, 3000);
+    return () => clearTimeout(fallback);
+  }, [skyReady.error, navigation]);
 
   return (
     <View style={{ flex: 1, backgroundColor: '#0a0f18' }}>
