@@ -25,6 +25,7 @@ type PhaseState = {
   progress: number;        // 0..1 logical progress (gates/phase hints)
   displayProgress: number; // smoothed 0..1 for UI
   startedAt: number;
+  lastActivityAt: number;
   playableAt?: number;
   error?: string;
   requiredGates: WorldGate[];
@@ -32,9 +33,9 @@ type PhaseState = {
 };
 
 const states: Record<WorldKey, PhaseState> = {
-  core: { playable: true, phase: 'idle', progress: 1, displayProgress: 1, startedAt: Date.now(), requiredGates: [], gates: {} },
-  fantasy: { playable: false, phase: 'boot', progress: 0, displayProgress: 0, startedAt: Date.now(), requiredGates: [...REQUIRED_GATES.fantasy], gates: {} },
-  skybase: { playable: false, phase: 'boot', progress: 0, displayProgress: 0, startedAt: Date.now(), requiredGates: [...REQUIRED_GATES.skybase], gates: {} },
+  core: { playable: true, phase: 'idle', progress: 1, displayProgress: 1, startedAt: Date.now(), lastActivityAt: Date.now(), requiredGates: [], gates: {} },
+  fantasy: { playable: false, phase: 'boot', progress: 0, displayProgress: 0, startedAt: Date.now(), lastActivityAt: Date.now(), requiredGates: [...REQUIRED_GATES.fantasy], gates: {} },
+  skybase: { playable: false, phase: 'boot', progress: 0, displayProgress: 0, startedAt: Date.now(), lastActivityAt: Date.now(), requiredGates: [...REQUIRED_GATES.skybase], gates: {} },
 };
 
 const listeners = new Set<() => void>();
@@ -66,7 +67,7 @@ function ensureTimers() {
       (Object.keys(REQUIRED_GATES) as PlayableWorld[]).forEach((world) => {
         const s = states[world];
         if (s.playable || s.error) return;
-        if (now - s.startedAt < 45000) return;
+        if (now - s.lastActivityAt < 45000) return;
         const missing = s.requiredGates.filter((g) => !s.gates[g]);
         if (!missing.length) return;
         s.error = `Timed out waiting for: ${missing.join(', ')}`;
@@ -85,8 +86,10 @@ function recomputeProgress(world: PlayableWorld) {
   const s = states[world];
   const total = s.requiredGates.length;
   const done = s.requiredGates.filter((g) => !!s.gates[g]).length;
+  const prevProgress = s.progress;
   s.progress = total ? done / total : 1;
   if (s.playable) s.progress = 1;
+  if (s.progress > prevProgress + 1e-6) s.lastActivityAt = Date.now();
 }
 
 export function resetWorldReady(world: PlayableWorld) {
@@ -96,6 +99,7 @@ export function resetWorldReady(world: PlayableWorld) {
     progress: 0,
     displayProgress: 0,
     startedAt: Date.now(),
+    lastActivityAt: Date.now(),
     requiredGates: [...REQUIRED_GATES[world]],
     gates: {},
     error: undefined,
@@ -107,6 +111,7 @@ export function resetWorldReady(world: PlayableWorld) {
 export function setWorldPhase(world: PlayableWorld, phaseName: string, progressHint?: number) {
   const s = states[world];
   s.phase = phaseName;
+  s.lastActivityAt = Date.now();
   if (typeof progressHint === 'number') {
     const bounded = Math.max(0, Math.min(0.99, progressHint));
     s.progress = Math.max(s.progress, bounded);
@@ -119,6 +124,7 @@ export function reportWorldGate(world: PlayableWorld, gate: WorldGate, detail?: 
   const s = states[world];
   if (!s.gates[gate]) {
     s.gates[gate] = { at: Date.now(), detail };
+    s.lastActivityAt = Date.now();
     console.log(`[LOAD_GATE] ${world} gate=${gate}${detail ? ` detail=${detail}` : ''}`);
   }
   if (gate === 'playable') {
@@ -137,6 +143,7 @@ export function reportWorldGate(world: PlayableWorld, gate: WorldGate, detail?: 
 export function setWorldError(world: PlayableWorld, reason: string) {
   const s = states[world];
   s.error = reason;
+  s.lastActivityAt = Date.now();
   s.phase = 'error';
   console.error(`[LOAD_ERROR] ${world} ${reason}`);
   __snapshotCache[world] = undefined;
