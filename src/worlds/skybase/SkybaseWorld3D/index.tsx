@@ -6,7 +6,7 @@ import { StyleSheet, View } from 'react-native';
 import { Canvas, useFrame } from '@react-three/fiber/native';
 import * as THREE from 'three';
 import { getBestAssetUri } from '../../../assets/worldUris';
-import { markWorldPlayable, setWorldPhase } from '../../../loading/worldLoadState';
+import { markWorldPlayable, reportWorldGate, setWorldError, setWorldPhase } from '../../../loading/worldLoadState';
 
 function clamp(v: number, a: number, b: number) { return Math.max(a, Math.min(b, v)); }
 
@@ -56,6 +56,7 @@ function Scene({
 }) {
   const readyRef = useRef(false);
   useFrame(({ camera }) => {
+    try {
     const yaw = yawRef.current;
     const pitch = pitchRef.current;
     const r = radiusRef.current;
@@ -71,8 +72,15 @@ function Scene({
     camera.lookAt(0, targetY + 1.0, 0);
     if (!readyRef.current) {
       readyRef.current = true;
+      reportWorldGate('skybase', 'first-frame');
+      reportWorldGate('skybase', 'controls-ready');
+      reportWorldGate('skybase', 'world-visible');
       setWorldPhase('skybase', 'playable', 1);
       markWorldPlayable('skybase');
+    }
+    } catch (e) {
+      setWorldError('skybase', `Runtime error during frame update: ${String(e)}`);
+      console.error(e);
     }
   });
 
@@ -125,7 +133,10 @@ export default function SkybaseWorld3D(props: { layer: number; layerHeight: numb
   const pinchRef = useRef<{ active: boolean; dist0: number; r0: number }>({ active: false, dist0: 0, r0: 0 });
 
   const targetY = props.layerHeight ?? 0;
-  useEffect(() => { setWorldPhase('skybase', 'stage0-canvas', 0.3); }, []);
+  useEffect(() => {
+    reportWorldGate('skybase', 'scene-mounted');
+    setWorldPhase('skybase', 'stage0-canvas', 0.3);
+  }, []);
 
   const handleTouches = (touches: any[]) => {
     const ts = touches || [];
@@ -212,7 +223,9 @@ export default function SkybaseWorld3D(props: { layer: number; layerHeight: numb
       <Canvas
         style={styles.canvas}
         gl={{ antialias: false, powerPreference: 'low-power' }}
-        onCreated={({ gl }) => { try { (gl as any).setClearColor?.('#0a0f18', 1); } catch (e) {} }}
+        onCreated={({ gl }) => { try { (gl as any).setClearColor?.('#0a0f18', 1); } catch (e) {}
+          reportWorldGate('skybase', 'canvas-mounted');
+        }}
         camera={{ position: [0, 6, 18], fov: 60 }}
       >
         <Suspense fallback={null}>
