@@ -14,7 +14,7 @@ import SkybaseWorld3D from './src/worlds/skybase/SkybaseWorld3D';
 import { GameHUD } from './src/ui/hud/GameHUD';
 import { buildWorldEntryAssets } from './src/assets/assetManifest';
 import { downloadAllWorldAssets, getWorldUris, hasResolvedWorldUris } from './src/assets/worldUris';
-import { isWorldReady, markWorldPlayable, setWorldPhase, useWorldReadiness } from './src/loading/worldLoadState';
+import { isWorldReady, markWorldPlayable, resetWorldReady, useWorldReadiness } from './src/loading/worldLoadState';
 
 
 const __origLog = console.log.bind(console);
@@ -1118,11 +1118,13 @@ function CombatWorld({ cfg }: { cfg: CombatConfig }) {
 
         {!fantasyReady.playable ? (
           <FalloutLoaderOverlay
+            world={'fantasy'}
             assets={buildWorldEntryAssets('fantasy', getWorldUris())}
             onDone={() => undefined}
             playable={fantasyReady.playable}
             phase={fantasyReady.phase}
             progress={fantasyReady.progress}
+            error={fantasyReady.error}
             title={'Loading Fantasy Valley…'}
             subtitle={'Preparing movement, staff, and first chunk…'}
           />
@@ -1165,12 +1167,32 @@ function CombatWorld({ cfg }: { cfg: CombatConfig }) {
 
 
 function LoadingFantasyScreen({ navigation }: any) {
+  const fantasyReady = useWorldReadiness('fantasy');
+
+  useEffect(() => {
+    resetWorldReady('fantasy');
+  }, []);
+
   return (
     <View style={{ flex: 1, backgroundColor: '#0a0f18' }}>
+      <FantasyWorld3D
+        walking={false}
+        shootPulse={0}
+        bulletDmgEnemy={1}
+        bulletDmgBoss={1}
+        onPodium={() => undefined}
+        onMonument={() => undefined}
+        onEnemyKilled={() => undefined}
+      />
       <FalloutLoaderOverlay
+        world={'fantasy'}
         assets={buildWorldEntryAssets('fantasy', getWorldUris())}
+        playable={fantasyReady.playable}
+        phase={fantasyReady.phase}
+        progress={fantasyReady.progress}
+        error={fantasyReady.error}
         onDone={() => {
-navigation.replace('Fantasy');
+          navigation.replace('Fantasy');
         }}
         title={'Loading Fantasy Valley…'}
         subtitle={'Preparing biomes, enemies and collision mesh…'}
@@ -1180,12 +1202,24 @@ navigation.replace('Fantasy');
 }
 
 function LoadingSkybaseScreen({ navigation }: any) {
+  const skyReady = useWorldReadiness('skybase');
+
+  useEffect(() => {
+    resetWorldReady('skybase');
+  }, []);
+
   return (
     <View style={{ flex: 1, backgroundColor: '#0a0f18' }}>
+      <SkybaseWorld3D layer={1} layerHeight={0} />
       <FalloutLoaderOverlay
+        world={'skybase'}
         assets={buildWorldEntryAssets('skybase', getWorldUris())}
+        playable={skyReady.playable}
+        phase={skyReady.phase}
+        progress={skyReady.progress}
+        error={skyReady.error}
         onDone={() => {
-navigation.replace('Skybase');
+          navigation.replace('Skybase');
         }}
         title={'Loading Skybase…'}
         subtitle={'Energizing reactor decks and atmosphere…'}
@@ -1208,11 +1242,13 @@ function SkybaseScreen({ navigation }: any) {
 
         {!skyReady.playable ? (
           <FalloutLoaderOverlay
+            world={'skybase'}
             assets={buildWorldEntryAssets('skybase', getWorldUris())}
             onDone={() => markWorldPlayable('skybase')}
             playable={skyReady.playable}
             phase={skyReady.phase}
             progress={skyReady.progress}
+            error={skyReady.error}
             title={'Loading Skybase…'}
             subtitle={'Preparing camera and first frame…'}
           />

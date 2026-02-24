@@ -7,7 +7,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber/native';
 import { useProgress, Clone, useAnimations, useTexture } from '@react-three/drei/native';
 import * as THREE from 'three';
 import { SkeletonUtils } from 'three-stdlib';
-import { markWorldPlayable, setWorldPhase } from '../../../loading/worldLoadState';
+import { markWorldPlayable, reportWorldGate, setWorldError, setWorldPhase } from '../../../loading/worldLoadState';
 
 
 let __fireballTex: any = null;
@@ -789,7 +789,6 @@ const onMountains = useCallback((idx: number, roots: any[]) => {
     const simAcc = useRef(0);
     const moveVelRef = useRef({ x: 0, y: 0 });
   const hadRuntimeErr = useRef(false);
-    const didReadyRef = useRef(false);
   const firstFrameRef = useRef(false);
   const playableSentRef = useRef(false);
 const spawnFixRef = useRef(120);
@@ -806,6 +805,7 @@ const fpsAccRef = useRef({ t: 0, frames: 0, worstMs: 0 });
     console.log('[ASSET_URI] fantasy', { path: PATH_GLB_URL().startsWith('file://'), gazebo: GAZEBO_URL().startsWith('file://'), staff: STAFF_URL().startsWith('file://') });
     const q = async () => {
       props.onReady?.();
+      reportWorldGate('fantasy', 'scene-mounted');
       setWorldPhase('fantasy', 'stage0-canvas', 0.1);
       try { await new Promise((r) => setTimeout(r, 0)); } catch {}
       if (!alive) return;
@@ -935,7 +935,11 @@ const monument = useMemo(() => ({ id: 'monument_1', side: 1 as 1, z: -320 }), []
 
   useFrame(({ camera }, dt) => {
     try {
-      firstFrameRef.current = true;
+      if (!firstFrameRef.current) {
+        firstFrameRef.current = true;
+        reportWorldGate('fantasy', 'first-frame');
+        reportWorldGate('fantasy', 'world-visible');
+      }
       if (__DEV__) {
         const ms = dt * 1000;
         const a = fpsAccRef.current;
@@ -1225,10 +1229,15 @@ spawnT.current += stepDt;
       camera.quaternion.setFromEuler(new THREE.Euler(pitch, yaw, 0, 'YXZ'));
       if (!playableSentRef.current && firstFrameRef.current && bootPhase >= 1) {
         playableSentRef.current = true;
+        reportWorldGate('fantasy', 'controls-ready');
         setWorldPhase('fantasy', 'playable', 1);
         markWorldPlayable('fantasy');
       }
     } catch (e) {
+      if (!hadRuntimeErr.current) {
+        hadRuntimeErr.current = true;
+        setWorldError('fantasy', `Runtime error during frame update: ${String(e)}`);
+      }
       console.error(e);
     }
   });
@@ -1537,7 +1546,9 @@ function FantasyWorld3D(props: {
       <Canvas
         style={{ flex: 1 }}
         gl={{ antialias: false, powerPreference: 'low-power' }}
-        onCreated={({ gl }) => { try { (gl as any).setClearColor?.("#0a0f18", 1); } catch (e) {} }}
+        onCreated={({ gl }) => { try { (gl as any).setClearColor?.("#0a0f18", 1); } catch (e) {}
+          reportWorldGate('fantasy', 'canvas-mounted');
+        }}
         camera={{ position: [0, 1.55, 0], fov: 65 }}
       >
         <Suspense fallback={null}>
