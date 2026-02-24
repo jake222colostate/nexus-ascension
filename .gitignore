@@ -29,3 +29,11 @@ backups/
 *.bak
 *.bak.*
 *.checkpoint*
+*.orig
+*.rej
+*.tmp
+*.temp
+*.swp
+*.swo
+backup/
+**/backup/

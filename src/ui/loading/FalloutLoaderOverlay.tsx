@@ -1,59 +1,17 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { Text, View, StyleSheet } from 'react-native';
-import { useProgress } from '@react-three/drei/native';
-import { preloadGLTFMeshopt, ensureMeshoptDecoder } from '../../loading/meshoptSetup';
-import { MeshoptGLTFLoaderV2 } from '../../loading/MeshoptGLTFLoaderV2';
+import { Canvas, useThree } from '@react-three/fiber/native';
+import { Clone } from '@react-three/drei/native';
+import { preloadGLTFMeshopt, useGLTFMeshopt } from '../../loading/meshoptSetup';
 
-type AssetDescriptor = { url: string };
+type AssetDescriptor = { id?: string; url: string; kind?: string };
 
 type Props =
-  | {
-      assets: AssetDescriptor[];
-      onDone: () => void;
-      title?: string;
-      subtitle?: string;
-    }
-  | {
-      lootUrl: string;
-      preloadUrls: string[];
-      onDone: () => void;
-      title?: string;
-      subtitle?: string;
-    };
+  | { assets: AssetDescriptor[]; onDone: () => void; title?: string; subtitle?: string }
+  | { lootUrl: string; preloadUrls: string[]; onDone: () => void; title?: string; subtitle?: string };
 
-
-async function preloadAllAssets(urls: string[], opts?: { maxGlb?: number }) {
-  ensureMeshoptDecoder();
-  const manager = THREE.DefaultLoadingManager;
-  const gltfLoader: any = new (MeshoptGLTFLoaderV2 as any)(manager);
-  const texLoader: any = new (THREE as any).TextureLoader(manager);
-
-  const maxGlb = Math.max(0, Math.min(10, Number(opts?.maxGlb ?? 3)));
-
-  // 1) textures first (cheap)
-  for (const u of urls) {
-    const e = ext(u);
-    if (e === 'jpg' || e === 'jpeg' || e === 'png' || e === 'webp') {
-      const t0 = Date.now();
-      await texLoader.loadAsync(u);
-      console.log('[LOADER] tex', u, (Date.now() - t0) + 'ms');
-    }
-  }
-
-  // 2) GLBs sequential with a hard cap (prevents iOS OOM)
-  let glbCount = 0;
-  for (const u of urls) {
-    const e = ext(u);
-    if (e === 'glb' || e === 'gltf') {
-      glbCount += 1;
-      if (glbCount > maxGlb) break;
-      const t0 = Date.now();
-      await gltfLoader.loadAsync(u);
-      console.log('[LOADER] gltf', u, (Date.now() - t0) + 'ms');
-    }
-  }
-}
+const EXCLUDED_PREVIEW = ['mountain', 'skybox', 'monster', 'attack', 'walk', 'run'];
 
 function ext(url?: string) {
   const s = String(url ?? '');
@@ -61,92 +19,135 @@ function ext(url?: string) {
   return (m && m[1]) ? String(m[1]).toLowerCase() : '';
 }
 
+function PreviewModel({ uri, angle, zoom }: { uri: string; angle: number; zoom: number }) {
+  const { scene, camera } = useThree();
+  const gltf: any = useGLTFMeshopt(uri as any);
+  const root = useMemo(() => {
+    const src = gltf?.scene ?? gltf;
+    return src ? src.clone(true) : null;
+  }, [gltf]);
+
+  useEffect(() => {
+    if (!root) return;
+    const box = new THREE.Box3().setFromObject(root);
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    root.position.sub(center);
+    const radius = Math.max(size.x, size.y, size.z, 1);
+    camera.position.set(radius * (1.35 + zoom), radius * (0.35 + zoom * 0.4), radius * (1.35 + zoom));
+    camera.lookAt(0, 0, 0);
+    scene.background = new THREE.Color('#0a0f18');
+  }, [root, camera, scene, zoom]);
+
+  if (!root) return null;
+  return <group rotation={[0, angle, 0]}><Clone object={root} /></group>;
+}
+
 export default function FalloutLoaderOverlay(props: Props) {
-  const urls = useMemo(() => {
-    const anyProps: any = props as any;
-    if (Array.isArray(anyProps.assets)) {
-      return anyProps.assets.map((a: any) => String(a?.url ?? '')).filter(Boolean);
-    }
-    const list = [String(anyProps.lootUrl ?? ''), ...(anyProps.preloadUrls ?? [])]
-      .map((u: any) => String(u ?? ''))
-      .filter(Boolean);
-    return list;
+  const assets = useMemo(() => {
+    const anyProps: any = props;
+    if (Array.isArray(anyProps.assets)) return anyProps.assets;
+    return [
+      { id: 'loot', url: String(anyProps.lootUrl ?? '') },
+      ...(anyProps.preloadUrls ?? []).map((u: string, i: number) => ({ id: `p_${i}`, url: String(u ?? '') })),
+    ];
   }, [props]);
 
-  // Kick off preloads (models + textures) and ONLY finish when they are actually loaded
-  const [preloaded, setPreloaded] = useState(false);
-  const [lastErr, setLastErr] = useState<string | null>(null);
+  const entryUrls = useMemo(
+    () => assets.map((a: AssetDescriptor) => a.url).filter((u: string) => !!u && (ext(u) === 'glb' || ext(u) === 'gltf' || ext(u) === 'jpg' || ext(u) === 'jpeg' || ext(u) === 'png')),
+    [assets],
+  );
+
+  const previewCandidates = useMemo(() => assets.filter((a: AssetDescriptor) => {
+    const e = ext(a.url);
+    if (!(e === 'glb' || e === 'gltf')) return false;
+    const key = `${a.id ?? ''} ${a.url}`.toLowerCase();
+    return !EXCLUDED_PREVIEW.some((x) => key.includes(x));
+  }), [assets]);
+
+  const preview = useMemo(() => {
+    const list = previewCandidates.length ? previewCandidates : assets.filter((a: AssetDescriptor) => ['glb', 'gltf'].includes(ext(a.url)));
+    if (!list.length) return null;
+    return list[Math.floor(Math.random() * list.length)];
+  }, [assets, previewCandidates]);
+
+  const [readyCount, setReadyCount] = useState(0);
+  const [zoom, setZoom] = useState(0.25);
+  const [angle, setAngle] = useState(0);
+  const [dragW, setDragW] = useState(280);
+  const fired = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
-
     (async () => {
-      try {
-        // keep the old request-only preloads too (harmless + helps cache paths)
-        for (const u of urls) {
-          const e = ext(u);
-          if (e === 'glb' || e === 'gltf') {
-            try { preloadGLTFMeshopt(u as any); } catch {}
-          }
-        }
-
-        try {
-          await preloadAllAssets(urls, { maxGlb: 3 });
-        } catch (e: any) {
-          const msg = String(e?.message ?? e ?? 'unknown error');
-          try { console.log('[LOADER_ERR]', msg); } catch {}
-            try { console.log('[LOADER_ERR_STACK]', String(e?.stack ?? '')); } catch {}
-          if (!cancelled) setLastErr(msg);
-        }
-        if (!cancelled) setPreloaded(true);
-      } catch {
-        if (!cancelled) setPreloaded(true);
+      let done = 0;
+      for (const u of entryUrls) {
+        try { if (ext(u) === 'glb' || ext(u) === 'gltf') preloadGLTFMeshopt(u as any); } catch {}
+        done += 1;
+        if (!cancelled) setReadyCount(done);
+        await new Promise((r) => setTimeout(r, 90));
+      }
+      if (!cancelled && !fired.current) {
+        fired.current = true;
+        props.onDone();
       }
     })();
-
     return () => { cancelled = true; };
-  }, [urls]);
+  }, [entryUrls, props]);
 
-  // drei progress tracks THREE.DefaultLoadingManager, which useLoader uses internally.
-  const { progress, active, item, loaded, total, errors } = useProgress() as any;
-
-  const fired = useRef(false);
-  useEffect(() => {
-    if (fired.current) return;
-    if (!preloaded) return;
-
-    if (!active && (total === 0 || loaded >= total) && Number(progress || 0) >= 99) {
-      fired.current = true;
-      props.onDone();
-    }
-  }, [active, progress, loaded, total, preloaded, props]);
-const pct = Math.max(0, Math.min(100, Math.round(Number(progress || 0))));
-  const title = (props as any).title ?? 'Loading world…';
-  const subtitle = (props as any).subtitle ?? (item ? String(item) : 'Fetching assets');
+  const pct = entryUrls.length ? Math.min(100, Math.round((readyCount / entryUrls.length) * 100)) : 100;
+  const lightSeed = useMemo(() => ({
+    x: (Math.random() - 0.5) * 8,
+    y: 4 + Math.random() * 6,
+    z: (Math.random() - 0.5) * 8,
+  }), []);
 
   return (
     <View style={S.root}>
-      <Text style={S.title}>{title}</Text>
-      <Text style={S.sub}>{subtitle}</Text>
+      <Text style={S.title}>{(props as any).title ?? 'Loading world…'}</Text>
+      <Text style={S.sub}>{(props as any).subtitle ?? 'Preparing first-frame assets…'}</Text>
 
-      <View style={S.barOuter}>
-        <View style={[S.barInner, { width: `${pct}%` }]} />
+      <View style={S.previewWrap}>
+        {preview ? (
+          <Canvas style={{ flex: 1 }} camera={{ fov: 50, position: [3, 1.5, 3] }}>
+            <ambientLight intensity={0.9} />
+            <directionalLight position={[lightSeed.x, lightSeed.y, lightSeed.z]} intensity={1.2} />
+            <PreviewModel uri={preview.url} angle={angle} zoom={zoom} />
+          </Canvas>
+        ) : null}
       </View>
-      <Text style={S.pct}>{pct}%</Text>
 
-      {!!errors && errors.length > 0 ? (
-        <Text style={S.err}>Asset load error: {String(errors[0])}</Text>
-      ) : null}
+      <View style={S.slider} onLayout={(e) => setDragW(e.nativeEvent.layout.width)}
+        onStartShouldSetResponder={() => true}
+        onMoveShouldSetResponder={() => true}
+        onResponderMove={(e) => {
+          const x = e.nativeEvent.locationX;
+          const t = Math.max(0, Math.min(1, x / Math.max(1, dragW)));
+          setZoom(t);
+        }}
+      >
+        <View style={[S.knob, { left: `${zoom * 100}%` }]} />
+      </View>
+      <Text
+        style={S.orbitHint}
+        onPress={() => setAngle((v) => v + Math.PI / 8)}
+      >Tap to orbit preview ↻</Text>
+
+      <View style={S.barOuter}><View style={[S.barInner, { width: `${pct}%` }]} /></View>
+      <Text style={S.pct}>{pct}%</Text>
     </View>
   );
 }
 
 const S = StyleSheet.create({
-  root: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, paddingTop: 90, paddingHorizontal: 18, backgroundColor: '#0a0f18' },
+  root: { position: 'absolute', inset: 0, paddingTop: 90, paddingHorizontal: 18, backgroundColor: '#0a0f18' },
   title: { color: '#fff', fontSize: 22, fontWeight: '900' },
   sub: { color: '#cfcfcf', marginTop: 8, fontSize: 12, fontWeight: '700' },
+  previewWrap: { marginTop: 16, height: 220, borderRadius: 14, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)' },
+  slider: { marginTop: 12, height: 18, borderRadius: 99, backgroundColor: 'rgba(255,255,255,0.18)', justifyContent: 'center' },
+  knob: { position: 'absolute', width: 16, height: 16, marginLeft: -8, borderRadius: 99, backgroundColor: '#9cc3ff' },
+  orbitHint: { color: '#cfd8ff', marginTop: 10, fontWeight: '700' },
   barOuter: { marginTop: 22, height: 12, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.14)', overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)' },
   barInner: { height: 12, backgroundColor: 'rgba(120,170,255,0.85)' },
   pct: { color: '#fff', marginTop: 10, textAlign: 'right', fontWeight: '900' },
-  err: { marginTop: 14, color: '#ffb4b4', fontSize: 12, fontWeight: '800' },
 });

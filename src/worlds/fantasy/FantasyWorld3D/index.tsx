@@ -1,7 +1,6 @@
 import { useGLTFMeshopt, preloadGLTFMeshopt } from "../../../loading/meshoptSetup";
 import React, {useEffect, useMemo, useRef, useState, Suspense, useCallback} from 'react';
-import { Asset } from 'expo-asset';
-import { WORLD_URIS } from '../../../assets/worldUris';
+import { getWorldUris, WORLD_URIS } from '../../../assets/worldUris';
 import { MeshBVH, acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from "three-mesh-bvh";
 import { View, StyleSheet, useWindowDimensions} from 'react-native';
 import { Canvas, useFrame, useThree } from '@react-three/fiber/native';
@@ -146,31 +145,37 @@ const SHOW_GAZEBO_MESH = true;
 const USE_GAZEBO_BVH = false;
 
 
-const MOUNTAIN_URL = WORLD_URIS.fantasy.mountain;
+const getFantasyUri = (k: keyof typeof WORLD_URIS.fantasy): string => {
+  const resolved = (getWorldUris()?.fantasy as any)?.[k];
+  const fallback = (WORLD_URIS?.fantasy as any)?.[k];
+  return String(resolved || fallback || '');
+};
 
-const GAZEBO_URL = WORLD_URIS.fantasy.gazebo;
-const PATH_GLB_URL = WORLD_URIS.fantasy.path;
+const MOUNTAIN_URL = () => getFantasyUri('mountain');
+
+const GAZEBO_URL = () => getFantasyUri('gazebo');
+const PATH_GLB_URL = () => getFantasyUri('path');
 const PATH_DEBUG_VER = "v2";
-const PODIUM_URL = WORLD_URIS.fantasy.podium;
-  const SKYBOX_URL = WORLD_URIS.fantasy.fantasySkybox;
-const FOREST_TREE_URL = WORLD_URIS.fantasy.forestTree;
+const PODIUM_URL = () => getFantasyUri('podium');
+const SKYBOX_URL = () => getFantasyUri('fantasySkybox');
+const FOREST_TREE_URL = () => getFantasyUri('forestTree');
 
-const CRYSTAL1_URL = WORLD_URIS.fantasy.crystal1;
-const CRYSTAL2_URL = WORLD_URIS.fantasy.crystal2;
-const CRYSTAL3_URL = WORLD_URIS.fantasy.crystal3;
-const CRYSTAL4_URL = WORLD_URIS.fantasy.crystal4;
-const CRYSTAL5_URL = WORLD_URIS.fantasy.crystal5;
+const CRYSTAL1_URL = () => getFantasyUri('crystal1');
+const CRYSTAL2_URL = () => getFantasyUri('crystal2');
+const CRYSTAL3_URL = () => getFantasyUri('crystal3');
+const CRYSTAL4_URL = () => getFantasyUri('crystal4');
+const CRYSTAL5_URL = () => getFantasyUri('crystal5');
 
-const MONSTER1_WALK_URL = WORLD_URIS.fantasy.monsterWalk;
-const MONSTER1_RUN_URL = WORLD_URIS.fantasy.monsterRun;
-const MONSTER1_ATTACK_URL = WORLD_URIS.fantasy.monsterAttack;
+const MONSTER1_WALK_URL = () => getFantasyUri('monsterWalk');
+const MONSTER1_RUN_URL = () => getFantasyUri('monsterRun');
+const MONSTER1_ATTACK_URL = () => getFantasyUri('monsterAttack');
 
-const MONSTER1_MODEL_URL = WORLD_URIS.fantasy.monsterModel;
+const MONSTER1_MODEL_URL = () => getFantasyUri('monsterModel');
 
-const FOREST_FOREST_TREE_URL = WORLD_URIS.fantasy.forestTree;
+const FOREST_FOREST_TREE_URL = () => getFantasyUri('forestTree');
 
 function MountainGLB(props: { position: [number, number, number]; scale?: number | [number, number, number]; rotationY?: number }) {
-  const { scene } = useGLTFMeshopt(MOUNTAIN_URL);
+  const { scene } = useGLTFMeshopt(MOUNTAIN_URL());
 
   useEffect(() => {
     try { return ensureBVHForObject(scene); } catch { return () => {}; }
@@ -188,7 +193,7 @@ function MountainGLB(props: { position: [number, number, number]; scale?: number
 }
   function SkyboxAndFog() {
     const { scene } = useThree();
-    const tex: any = useTexture(SKYBOX_URL);
+    const tex: any = useTexture(SKYBOX_URL());
 
     useEffect(() => {
       if (!tex) return;
@@ -233,7 +238,7 @@ function GazeboGLBLoaded(props: { uri: string; position: [number, number, number
 }
 
 function GazeboGLB(props: { position: [number, number, number]; scale?: number; rotationY?: number }) {
-  const uri = GAZEBO_URL;
+  const uri = GAZEBO_URL();
 
   useEffect(() => {
   }, [uri]);
@@ -243,7 +248,7 @@ function GazeboGLB(props: { position: [number, number, number]; scale?: number; 
 }
 
 function PodiumGLB(props: { position: [number, number, number]; scale?: number | [number, number, number]; rotationY?: number }) {
-  const { scene } = useGLTFMeshopt(PODIUM_URL);
+  const { scene } = useGLTFMeshopt(PODIUM_URL());
 
   return (
     <group position={props.position} scale={props.scale || 1.0} rotation={[0, props.rotationY || 0, 0]}>
@@ -258,7 +263,7 @@ function PodiumGLB(props: { position: [number, number, number]; scale?: number |
   targetW?: number; // desired X size in world units
   targetL?: number; // desired Z size in world units
 }) {
-  const { scene } = useGLTFMeshopt(PATH_GLB_URL);
+  const { scene } = useGLTFMeshopt(PATH_GLB_URL());
 
   const size = useMemo(() => {
     const v = new THREE.Vector3(1, 1, 1);
@@ -297,7 +302,7 @@ function PodiumGLB(props: { position: [number, number, number]; scale?: number |
 
 
 function ForestTreeGLB(props: { position: [number, number, number]; scale?: number; rotationY?: number }) {
-  const { scene } = useGLTFMeshopt(FOREST_FOREST_TREE_URL);
+  const { scene } = useGLTFMeshopt(FOREST_FOREST_TREE_URL());
 
   const minY = useMemo(() => {
     let y = 0;
@@ -480,9 +485,9 @@ function resolveSphereMeshBVH(
   function Monster1GLB(props: { position: [number, number, number]; scale?: number; rotationY?: number; anim: EnemyAnim }) {
   const ref = useRef<THREE.Group>(null);
 
-  const walkG: any = useGLTFMeshopt(MONSTER1_WALK_URL as any);
-  const runG: any = useGLTFMeshopt(MONSTER1_RUN_URL as any);
-  const atkG: any = useGLTFMeshopt(MONSTER1_ATTACK_URL as any);
+  const walkG: any = useGLTFMeshopt(MONSTER1_WALK_URL() as any);
+  const runG: any = useGLTFMeshopt(MONSTER1_RUN_URL() as any);
+  const atkG: any = useGLTFMeshopt(MONSTER1_ATTACK_URL() as any);
 
   const baseScene: any =
     (walkG && walkG.scene) ? walkG.scene :
@@ -568,7 +573,7 @@ function resolveSphereMeshBVH(
 }
 
 
-function Chunk(props: { idx: number; centerZ: number; showGazebo?: boolean; onMountains?: (idx: number, roots: any[]) => void; onTrees?: (idx: number, boxes: AABB2[]) => void; }) {
+function Chunk(props: { idx: number; centerZ: number; showGazebo?: boolean; onMountains?: (idx: number, roots: any[]) => void; onTrees?: (idx: number, boxes: AABB2[]) => void; showProps?: boolean; showTrees?: boolean; showMountains?: boolean; }) {
   const { idx, centerZ } = props;
 
 
@@ -619,13 +624,21 @@ function Chunk(props: { idx: number; centerZ: number; showGazebo?: boolean; onMo
   }, [forestTrees, centerZ]);
 
   useEffect(() => {
+    if (!props.showTrees) {
+      props.onTrees?.(idx, []);
+      return;
+    }
     props.onTrees?.(idx, trunkBoxes);
     return () => { props.onTrees?.(idx, []); };
-  }, [idx, trunkBoxes, props.onTrees]);
+  }, [idx, trunkBoxes, props.onTrees, props.showTrees]);
 
   const gazeboRef = useRef<any>(null);
 
   useEffect(() => {
+    if (!props.showMountains) {
+      props.onMountains?.(props.idx, []);
+      return;
+    }
     let alive = true;
     let tries = 0;
     const tick = () => {
@@ -651,7 +664,7 @@ function Chunk(props: { idx: number; centerZ: number; showGazebo?: boolean; onMo
     return () => {
       alive = false;
       props.onMountains?.(props.idx, []);};
-  }, [props.idx, props.onMountains]);
+  }, [props.idx, props.onMountains, props.showMountains]);
 return (
     <group position={[0, 0, centerZ]}>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
@@ -670,7 +683,7 @@ return (
           });
           return (
             <group position={[0, 0.06, 0]}>
-              {tiles.map(t => (
+              {props.showProps ? tiles.map(t => (
                 <PathGLB
                   key={t.id}
                   position={[t.x, 0.04, t.z]}
@@ -678,7 +691,7 @@ return (
                     targetL={CHUNK_LEN / 6}
                   scale={[t.s * t.mx, t.s, t.s]}rotationY={t.ry}
                 />
-              ))}
+              )) : null}
             </group>
           );
         })()}
@@ -689,20 +702,20 @@ return (
       </mesh>
 
       {/* Forest trees */}
-      {forestTrees.map(t => (
+      {props.showTrees ? forestTrees.map(t => (
         <ForestTreeGLB
           key={t.id}
           position={[t.x, TREE_Y, t.z]}
           scale={t.s * 7}
           rotationY={t.ry}
         />
-      ))}
+      )) : null}
 
 
         {(idx === 0 && !!props.showGazebo) ? (
             SHOW_GAZEBO_MESH ? (
               <group ref={gazeboRef}>
-                {GAZEBO_URL ? <GazeboGLB position={[0, GAZEBO_LIFT + 0.35, 0]} scale={12.0} rotationY={Math.PI} /> : null}
+                {GAZEBO_URL() ? <GazeboGLB position={[0, GAZEBO_LIFT + 0.35, 0]} scale={12.0} rotationY={Math.PI} /> : null}
               </group>
             ) : (
               <group>
@@ -720,14 +733,14 @@ return (
 
 
 
-        <group>
+      {props.showMountains ? <group>
           <group ref={leftMountainRef}>
             <MountainGLB position={[-(MOUNTAIN_X - 26.35), 30.0, 0]} scale={[55.0, 110.0, 110.0]} rotationY={(idx % 2 === 0) ? 0 : Math.PI} />
           </group>
           <group ref={rightMountainRef}>
             <MountainGLB position={[ (MOUNTAIN_X - 26.35), 30.0, 0]} scale={[55.0, 110.0, 110.0]} rotationY={(idx % 2 === 0) ? Math.PI : 0} />
           </group>
-        </group>
+        </group> : null}
     </group>
   );
 }
@@ -745,6 +758,7 @@ walking: boolean;
   onMonument: () => void;
   onEnemyKilled: (kind: EnemyKind) => void;
 }) {
+  const [bootPhase, setBootPhase] = useState<0 | 1 | 2 | 3>(0);
   const playerPosRef = useRef(new THREE.Vector3(0, GAZEBO_PLATFORM_Y + STAND_H + 2.25, -(CHUNK_LEN * 0.5)));
     const mountainRootsRef = useRef<any[]>([]);
     const mountainChunkMapRef = useRef<Map<number, any[]>>(new Map());
@@ -787,14 +801,42 @@ const lastMountainCountRef = useRef(-1);
 
 
   useEffect(() => {
+    let alive = true;
+    const q = async () => {
+      props.onReady?.();
+      try { await new Promise((r) => setTimeout(r, 0)); } catch {}
+      if (!alive) return;
+      setBootPhase(1);
+
+      for (const u of [GAZEBO_URL(), PATH_GLB_URL(), PODIUM_URL(), CRYSTAL1_URL()]) {
+        if (!u) continue;
+        try { preloadGLTFMeshopt(u as any); } catch {}
+        try { await new Promise((r) => setTimeout(r, 120)); } catch {}
+        if (!alive) return;
+      }
+      setBootPhase(2);
+
+      for (const u of [FOREST_FOREST_TREE_URL(), MOUNTAIN_URL(), MONSTER1_MODEL_URL(), MONSTER1_WALK_URL(), MONSTER1_RUN_URL(), MONSTER1_ATTACK_URL()]) {
+        if (!u) continue;
+        try { preloadGLTFMeshopt(u as any); } catch {}
+        try { await new Promise((r) => setTimeout(r, 120)); } catch {}
+        if (!alive) return;
+      }
+      setBootPhase(3);
+    };
+    q();
+    return () => { alive = false; };
+  }, []);
+
+  useEffect(() => {
     // Prefetch next chunk assets (request-only), keeps visuals smooth without rendering far.
     const bc = baseChunkRef.current;
     if (lastPrefetchChunkRef.current === bc) return;
     lastPrefetchChunkRef.current = bc;
 
     const urls = [
-      PATH_GLB_URL,
-      FOREST_FOREST_TREE_URL,
+      PATH_GLB_URL(),
+      FOREST_FOREST_TREE_URL(),
     ].filter(Boolean) as any[];
 
     const t = setTimeout(() => {
@@ -804,7 +846,7 @@ const lastMountainCountRef = useRef(-1);
     }, 50);
 
     return () => clearTimeout(t);
-  }, [chunkTick]);
+  }, [chunkTick, bootPhase]);
 
 
   const [projectiles, setProjectiles] = useState<Projectile[]>([]);
@@ -997,13 +1039,15 @@ const mcnt = mountainRootsRef.current.length;
             const curChunkIdx = Math.floor((-p.z) / CHUNK_LEN);
             const tmp = tmpMountainRootsRef.current;
             tmp.length = 0;
-            const a0 = mountainChunkMapRef.current.get(curChunkIdx);
-            const a1 = mountainChunkMapRef.current.get(curChunkIdx - 1);
-            const a2 = mountainChunkMapRef.current.get(curChunkIdx + 1);
-            if (a0) tmp.push(...a0);
-            if (a1) tmp.push(...a1);
-            if (a2) tmp.push(...a2);
-            resolveSphereMeshBVH(p, PLAYER_RADIUS, tmp);
+            if (bootPhase >= 3) {
+              const a0 = mountainChunkMapRef.current.get(curChunkIdx);
+              const a1 = mountainChunkMapRef.current.get(curChunkIdx - 1);
+              const a2 = mountainChunkMapRef.current.get(curChunkIdx + 1);
+              if (a0) tmp.push(...a0);
+              if (a1) tmp.push(...a1);
+              if (a2) tmp.push(...a2);
+              resolveSphereMeshBVH(p, PLAYER_RADIUS, tmp);
+            }
             
             const tc2 = Math.floor((-p.z) / CHUNK_LEN);
             const tt0 = (treeChunkMapRef.current.get(tc2) || []) as any;
@@ -1124,7 +1168,7 @@ spawnT.current += stepDt;
                 resolveCircleAABBs(ep, ENEMY_RADIUS, nearPodiumBoxes);
                 const eTree = treeBoxesRef.current;
                 if (eTree.length) resolveCircleAABBs(ep, ENEMY_RADIUS, eTree);
-                resolveSphereMeshBVH(ep, ENEMY_RADIUS, tmp);
+                if (bootPhase >= 3) resolveSphereMeshBVH(ep, ENEMY_RADIUS, tmp);
                 return { ...e, aggro, wanderYaw, wanderT, pos: ep, ry, atkCd, anim: locomotion };
               }
 
@@ -1208,8 +1252,7 @@ spawnT.current += stepDt;
       {chunks.map((i) => {
         const chunkIdx = baseChunk + i;
         const centerZ = -(chunkIdx * CHUNK_LEN) - (CHUNK_LEN / 2);
-          if (!didReadyRef.current && chunkIdx === baseChunk) { didReadyRef.current = true; props.onReady?.(); }
-        return <Chunk key={`c_${chunkIdx}`} idx={chunkIdx} centerZ={centerZ} showGazebo={showGazebo} onMountains={onMountains} onTrees={onTrees} />;
+        return <Chunk key={`c_${chunkIdx}`} idx={chunkIdx} centerZ={centerZ} showGazebo={showGazebo} onMountains={onMountains} onTrees={onTrees} showProps={bootPhase >= 1} showTrees={bootPhase >= 2} showMountains={bootPhase >= 2} />;
       })}
 
       {podiums.map((pd) => {
@@ -1260,12 +1303,12 @@ spawnT.current += stepDt;
               <circleGeometry args={[e.kind === 'boss' ? 1.6 : 0.9, 24]} />
               <meshBasicMaterial transparent opacity={0.22} color={'#000'} depthWrite={false} />
             </mesh>
-            <Monster1GLB
+            {bootPhase >= 2 ? <Monster1GLB
               position={[e.pos.x, e.pos.y, e.pos.z]}
               scale={e.kind === 'boss' ? 1.3 : 0.7}
               rotationY={e.ry || 0}
               anim={e.anim || 'walk'}
-            />
+            /> : <mesh position={[e.pos.x, e.pos.y + 0.8, e.pos.z]}><capsuleGeometry args={[0.4, 1.1, 8, 12]} /><meshStandardMaterial color={'#6a748f'} /></mesh>}
 
           <mesh position={[e.pos.x, e.pos.y + (e.kind === 'boss' ? 3.2 : 1.6), e.pos.z]}>
             <planeGeometry args={[e.kind === 'boss' ? 3.4 : 1.6, 0.18]} />
@@ -1282,6 +1325,10 @@ spawnT.current += stepDt;
         </group>
       ))}
 
+
+      {bootPhase >= 1 ? (
+        <CrystalField count={18} seed={20260220} centerZ={-40} spreadX={80} spreadZ={180} minY={22} maxY={50} />
+      ) : null}
       {projectiles.map((pr) => (
           <sprite key={pr.id} position={[pr.pos.x, pr.pos.y, pr.pos.z]} scale={[0.9, 0.9, 0.9]}>
             <spriteMaterial
@@ -1467,7 +1514,6 @@ function FantasyWorld3D(props: {
         <Suspense fallback={null}>
           
 
-                    <CrystalField count={60} seed={20260220} centerZ={-40} spreadX={120} spreadZ={380} minY={22} maxY={80} />
 <Scene
     onReady={props.onReady}
           walking={!!props.walking}
@@ -1527,7 +1573,7 @@ const styles = StyleSheet.create({
 export default FantasyWorld3D;
 
 /** Crystal Field (Fantasy sky decoration) **/
-const CRYSTAL_URLS: string[] = [CRYSTAL1_URL, CRYSTAL2_URL, CRYSTAL3_URL, CRYSTAL4_URL, CRYSTAL5_URL].filter(Boolean).map((u: any) => String(u));
+const CRYSTAL_URLS: string[] = [CRYSTAL1_URL(), CRYSTAL2_URL(), CRYSTAL3_URL(), CRYSTAL4_URL(), CRYSTAL5_URL()].filter(Boolean).map((u: any) => String(u));
 
 function CrystalGLB(props: {
   uri: string;
