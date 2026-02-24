@@ -6,7 +6,8 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "optimize:glb": "node scripts/optimize-glb.mjs --tier=balanced"
   },
   "dependencies": {
     "@expo/metro-config": "~54.0.14",

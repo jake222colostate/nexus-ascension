@@ -7,9 +7,15 @@ import { preloadGLTFMeshopt, useGLTFMeshopt } from '../../loading/meshoptSetup';
 
 type AssetDescriptor = { id?: string; url: string; kind?: string };
 
-type Props =
-  | { assets: AssetDescriptor[]; onDone: () => void; title?: string; subtitle?: string }
-  | { lootUrl: string; preloadUrls: string[]; onDone: () => void; title?: string; subtitle?: string };
+type Props = {
+  assets: AssetDescriptor[];
+  onDone: () => void;
+  title?: string;
+  subtitle?: string;
+  phase?: string;
+  progress?: number;
+  playable?: boolean;
+};
 
 const EXCLUDED_PREVIEW = ['mountain', 'skybox', 'monster', 'attack', 'walk', 'run'];
 
@@ -44,34 +50,24 @@ function PreviewModel({ uri, angle, zoom }: { uri: string; angle: number; zoom: 
 }
 
 export default function FalloutLoaderOverlay(props: Props) {
-  const assets = useMemo(() => {
-    const anyProps: any = props;
-    if (Array.isArray(anyProps.assets)) return anyProps.assets;
-    return [
-      { id: 'loot', url: String(anyProps.lootUrl ?? '') },
-      ...(anyProps.preloadUrls ?? []).map((u: string, i: number) => ({ id: `p_${i}`, url: String(u ?? '') })),
-    ];
-  }, [props]);
-
   const entryUrls = useMemo(
-    () => assets.map((a: AssetDescriptor) => a.url).filter((u: string) => !!u && (ext(u) === 'glb' || ext(u) === 'gltf' || ext(u) === 'jpg' || ext(u) === 'jpeg' || ext(u) === 'png')),
-    [assets],
+    () => props.assets.map((a) => a.url).filter((u) => !!u && ['glb', 'gltf', 'jpg', 'jpeg', 'png'].includes(ext(u))),
+    [props.assets],
   );
 
-  const previewCandidates = useMemo(() => assets.filter((a: AssetDescriptor) => {
-    const e = ext(a.url);
-    if (!(e === 'glb' || e === 'gltf')) return false;
-    const key = `${a.id ?? ''} ${a.url}`.toLowerCase();
-    return !EXCLUDED_PREVIEW.some((x) => key.includes(x));
-  }), [assets]);
-
   const preview = useMemo(() => {
-    const list = previewCandidates.length ? previewCandidates : assets.filter((a: AssetDescriptor) => ['glb', 'gltf'].includes(ext(a.url)));
-    if (!list.length) return null;
-    return list[Math.floor(Math.random() * list.length)];
-  }, [assets, previewCandidates]);
+    const candidates = props.assets.filter((a) => {
+      const e = ext(a.url);
+      if (!(e === 'glb' || e === 'gltf')) return false;
+      const key = `${a.id ?? ''} ${a.url}`.toLowerCase();
+      return !EXCLUDED_PREVIEW.some((x) => key.includes(x));
+    });
+    if (!candidates.length) return null;
+    return candidates[Math.floor(Math.random() * candidates.length)];
+  }, [props.assets]);
 
   const [readyCount, setReadyCount] = useState(0);
+  const [preloadDone, setPreloadDone] = useState(false);
   const [zoom, setZoom] = useState(0.25);
   const [angle, setAngle] = useState(0);
   const [dragW, setDragW] = useState(280);
@@ -87,25 +83,27 @@ export default function FalloutLoaderOverlay(props: Props) {
         if (!cancelled) setReadyCount(done);
         await new Promise((r) => setTimeout(r, 90));
       }
-      if (!cancelled && !fired.current) {
-        fired.current = true;
-        props.onDone();
-      }
+      if (!cancelled) setPreloadDone(true);
     })();
     return () => { cancelled = true; };
-  }, [entryUrls, props]);
+  }, [entryUrls]);
 
-  const pct = entryUrls.length ? Math.min(100, Math.round((readyCount / entryUrls.length) * 100)) : 100;
-  const lightSeed = useMemo(() => ({
-    x: (Math.random() - 0.5) * 8,
-    y: 4 + Math.random() * 6,
-    z: (Math.random() - 0.5) * 8,
-  }), []);
+  useEffect(() => {
+    const gate = typeof props.playable === 'boolean' ? props.playable : preloadDone;
+    if (!gate || fired.current) return;
+    fired.current = true;
+    props.onDone();
+  }, [props.playable, preloadDone, props]);
+
+  const preloadPct = entryUrls.length ? Math.round((readyCount / entryUrls.length) * 100) : 100;
+  const pct = props.playable ? 100 : Math.min(99, Math.round((props.progress ?? (preloadPct / 100)) * 100));
+  const lightSeed = useMemo(() => ({ x: (Math.random() - 0.5) * 8, y: 4 + Math.random() * 6, z: (Math.random() - 0.5) * 8 }), []);
 
   return (
-    <View style={S.root}>
-      <Text style={S.title}>{(props as any).title ?? 'Loading world…'}</Text>
-      <Text style={S.sub}>{(props as any).subtitle ?? 'Preparing first-frame assets…'}</Text>
+    <View style={S.root} pointerEvents="auto">
+      <Text style={S.title}>{props.title ?? 'Loading world…'}</Text>
+      <Text style={S.sub}>{props.subtitle ?? 'Preparing first-frame assets…'}</Text>
+      <Text style={S.sub}>Phase: {props.phase ?? 'boot'}</Text>
 
       <View style={S.previewWrap}>
         {preview ? (
@@ -117,21 +115,13 @@ export default function FalloutLoaderOverlay(props: Props) {
         ) : null}
       </View>
 
-      <View style={S.slider} onLayout={(e) => setDragW(e.nativeEvent.layout.width)}
-        onStartShouldSetResponder={() => true}
-        onMoveShouldSetResponder={() => true}
-        onResponderMove={(e) => {
-          const x = e.nativeEvent.locationX;
-          const t = Math.max(0, Math.min(1, x / Math.max(1, dragW)));
-          setZoom(t);
-        }}
-      >
+      <View style={S.slider} onLayout={(e) => setDragW(e.nativeEvent.layout.width)} onStartShouldSetResponder={() => true} onMoveShouldSetResponder={() => true} onResponderMove={(e) => {
+        const x = e.nativeEvent.locationX;
+        setZoom(Math.max(0, Math.min(1, x / Math.max(1, dragW))));
+      }}>
         <View style={[S.knob, { left: `${zoom * 100}%` }]} />
       </View>
-      <Text
-        style={S.orbitHint}
-        onPress={() => setAngle((v) => v + Math.PI / 8)}
-      >Tap to orbit preview ↻</Text>
+      <Text style={S.orbitHint} onPress={() => setAngle((v) => v + Math.PI / 8)}>Tap to orbit preview ↻</Text>
 
       <View style={S.barOuter}><View style={[S.barInner, { width: `${pct}%` }]} /></View>
       <Text style={S.pct}>{pct}%</Text>

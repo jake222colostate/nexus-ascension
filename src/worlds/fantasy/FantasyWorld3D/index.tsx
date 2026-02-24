@@ -1,12 +1,13 @@
 import { useGLTFMeshopt, preloadGLTFMeshopt } from "../../../loading/meshoptSetup";
 import React, {useEffect, useMemo, useRef, useState, Suspense, useCallback} from 'react';
-import { getWorldUris, WORLD_URIS } from '../../../assets/worldUris';
+import { getBestAssetUri } from '../../../assets/worldUris';
 import { MeshBVH, acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from "three-mesh-bvh";
 import { View, StyleSheet, useWindowDimensions} from 'react-native';
 import { Canvas, useFrame, useThree } from '@react-three/fiber/native';
 import { useProgress, Clone, useAnimations, useTexture } from '@react-three/drei/native';
 import * as THREE from 'three';
 import { SkeletonUtils } from 'three-stdlib';
+import { markWorldPlayable, setWorldPhase } from '../../../loading/worldLoadState';
 
 
 let __fireballTex: any = null;
@@ -145,11 +146,7 @@ const SHOW_GAZEBO_MESH = true;
 const USE_GAZEBO_BVH = false;
 
 
-const getFantasyUri = (k: keyof typeof WORLD_URIS.fantasy): string => {
-  const resolved = (getWorldUris()?.fantasy as any)?.[k];
-  const fallback = (WORLD_URIS?.fantasy as any)?.[k];
-  return String(resolved || fallback || '');
-};
+const getFantasyUri = (k: string): string => String(getBestAssetUri('fantasy', k) || '');
 
 const MOUNTAIN_URL = () => (getFantasyUri('mountainMobile') || getFantasyUri('mountain'));
 
@@ -171,6 +168,7 @@ const MONSTER1_RUN_URL = () => getFantasyUri('monsterRun');
 const MONSTER1_ATTACK_URL = () => getFantasyUri('monsterAttack');
 
 const MONSTER1_MODEL_URL = () => getFantasyUri('monsterModel');
+const STAFF_URL = () => getFantasyUri('staff');
 
 const FOREST_FOREST_TREE_URL = () => getFantasyUri('forestTree');
 
@@ -792,8 +790,11 @@ const onMountains = useCallback((idx: number, roots: any[]) => {
     const moveVelRef = useRef({ x: 0, y: 0 });
   const hadRuntimeErr = useRef(false);
     const didReadyRef = useRef(false);
+  const firstFrameRef = useRef(false);
+  const playableSentRef = useRef(false);
 const spawnFixRef = useRef(120);
 const lastMountainCountRef = useRef(-1);
+const fpsAccRef = useRef({ t: 0, frames: 0, worstMs: 0 });
 
   const [chunkTick, setChunkTick] = useState(0);
   const baseChunkRef = useRef(0);
@@ -802,19 +803,23 @@ const lastMountainCountRef = useRef(-1);
 
   useEffect(() => {
     let alive = true;
+    console.log('[ASSET_URI] fantasy', { path: PATH_GLB_URL().startsWith('file://'), gazebo: GAZEBO_URL().startsWith('file://'), staff: STAFF_URL().startsWith('file://') });
     const q = async () => {
       props.onReady?.();
+      setWorldPhase('fantasy', 'stage0-canvas', 0.1);
       try { await new Promise((r) => setTimeout(r, 0)); } catch {}
       if (!alive) return;
       setBootPhase(1);
+      setWorldPhase('fantasy', 'stage1-near-chunk', 0.35);
 
-      for (const u of [GAZEBO_URL(), PATH_GLB_URL(), PODIUM_URL(), CRYSTAL1_URL()]) {
+      for (const u of [GAZEBO_URL(), PATH_GLB_URL(), PODIUM_URL(), CRYSTAL1_URL(), STAFF_URL()]) {
         if (!u) continue;
         try { preloadGLTFMeshopt(u as any); } catch {}
         try { await new Promise((r) => setTimeout(r, 120)); } catch {}
         if (!alive) return;
       }
       setBootPhase(2);
+      setWorldPhase('fantasy', 'stage2-props', 0.6);
 
       for (const u of [FOREST_FOREST_TREE_URL(), MOUNTAIN_URL(), MONSTER1_MODEL_URL(), MONSTER1_WALK_URL(), MONSTER1_RUN_URL(), MONSTER1_ATTACK_URL()]) {
         if (!u) continue;
@@ -823,6 +828,7 @@ const lastMountainCountRef = useRef(-1);
         if (!alive) return;
       }
       setBootPhase(3);
+      setWorldPhase('fantasy', 'stage3-streaming', 0.9);
     };
     q();
     return () => { alive = false; };
@@ -910,44 +916,38 @@ const monument = useMemo(() => ({ id: 'monument_1', side: 1 as 1, z: -320 }), []
   const collectedRef = useRef<Record<string, 1>>({});
   const [collectedTick, setCollectedTick] = useState(0);
 
-  function fireAtNearest(playerPos: THREE.Vector3) {
-    const list = enemiesRef.current.filter(e => e.hp > 0);
-    if (!list.length) return;
+  function fireProjectileForward(playerPos: THREE.Vector3) {
+    const yaw = props.yawRef.current;
+    const pitch = props.pitchRef.current;
+    const forward = new THREE.Vector3(-Math.sin(yaw) * Math.cos(pitch), Math.sin(-pitch), -Math.cos(yaw) * Math.cos(pitch)).normalize();
+    const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
+    const up = new THREE.Vector3().crossVectors(right, forward).normalize();
 
-    let best: Enemy | null = null;
-    let bestD = Infinity;
-    for (const e of list) {
-      const d = playerPos.distanceTo(e.pos);
-      if (d < bestD) { bestD = d; best = e; }
-    }
-    if (!best) return;
+    const origin = playerPos.clone().setY(1.55)
+      .add(right.multiplyScalar(0.35))
+      .add(up.multiplyScalar(-0.22))
+      .add(forward.clone().multiplyScalar(0.7));
 
-    const origin = new THREE.Vector3(playerPos.x, 1.05, playerPos.z - 0.2);
-    const to = best.pos.clone().add(new THREE.Vector3(0, best.kind === 'boss' ? 1.2 : 0.4, 0));
-    const dir = to.clone().sub(origin);
-    const len = dir.length();
-    if (len < 0.001) return;
-    dir.multiplyScalar(1 / len);
-
-    const spread = best.kind === 'boss' ? 0.10 : 0.14;
-    const sx = (Math.random() - 0.5) * 2 * spread;
-    const sy = (Math.random() - 0.5) * 2 * spread;
-    const sz = (Math.random() - 0.5) * 2 * spread;
-
-    const finalDir = dir.clone().add(new THREE.Vector3(sx, sy, sz)).normalize();
-    const speed = 22;
-
-    const id = `p${Date.now()}_${Math.random().toString(16).slice(2)}`;
-    setProjectiles(prev => prev.concat([{
-      id,
-      pos: origin,
-      vel: finalDir.multiplyScalar(speed),
-      ttl: 2.2,
-    }]));
+    const speed = 24;
+    const id = `p_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+    setProjectiles(prev => (prev.length > 40 ? prev.slice(prev.length - 39) : prev).concat([{ id, pos: origin, vel: forward.multiplyScalar(speed), ttl: 2.2 }]));
   }
 
   useFrame(({ camera }, dt) => {
     try {
+      firstFrameRef.current = true;
+      if (__DEV__) {
+        const ms = dt * 1000;
+        const a = fpsAccRef.current;
+        a.t += dt;
+        a.frames += 1;
+        if (ms > a.worstMs) a.worstMs = ms;
+        if (a.t >= 2) {
+          const fps = a.frames / a.t;
+          console.log(`[FPS] fantasy avg=${fps.toFixed(1)} worstMs=${a.worstMs.toFixed(1)} tier=${bootPhase}`);
+          a.t = 0; a.frames = 0; a.worstMs = 0;
+        }
+      }
       const stepHz = 60;
       const stepDt = 1 / stepHz;
 
@@ -1099,7 +1099,7 @@ spawnT.current += stepDt;
 
         if (props.shootPulse !== lastShootPulse.current) {
           lastShootPulse.current = props.shootPulse;
-          fireAtNearest(p);
+          fireProjectileForward(p);
         }
 
           const alive = enemiesRef.current.filter(e => e.hp > 0);
@@ -1223,6 +1223,11 @@ spawnT.current += stepDt;
         const pitch = props.pitchRef.current;
       camera.position.set(p.x, 1.55, p.z);
       camera.quaternion.setFromEuler(new THREE.Euler(pitch, yaw, 0, 'YXZ'));
+      if (!playableSentRef.current && firstFrameRef.current && bootPhase >= 1) {
+        playableSentRef.current = true;
+        setWorldPhase('fantasy', 'playable', 1);
+        markWorldPlayable('fantasy');
+      }
     } catch (e) {
       console.error(e);
     }
@@ -1240,6 +1245,7 @@ spawnT.current += stepDt;
       <ambientLight intensity={0.65} />
       <directionalLight position={[6, 10, 6]} intensity={1.35} />
       <directionalLight position={[-6, 8, -6]} intensity={0.55} />
+      {bootPhase >= 1 ? <StaffViewModel /> : null}
 
         {SHOW_DEBUG_WALL ? (
           <mesh position={[0, 1.2, 1.0]}>
@@ -1327,7 +1333,7 @@ spawnT.current += stepDt;
 
 
       {bootPhase >= 1 ? (
-        <CrystalField count={18} seed={20260220} centerZ={-40} spreadX={80} spreadZ={180} minY={22} maxY={50} />
+        <CrystalField playerPosRef={playerPosRef} poolSize={28} seed={20260220} />
       ) : null}
       {projectiles.map((pr) => (
           <sprite key={pr.id} position={[pr.pos.x, pr.pos.y, pr.pos.z]} scale={[0.9, 0.9, 0.9]}>
@@ -1341,6 +1347,29 @@ spawnT.current += stepDt;
         ))}
     </>
   );
+}
+
+
+function StaffViewModel() {
+  const { camera } = useThree();
+  const gltf: any = useGLTFMeshopt(STAFF_URL() as any);
+  const root = useMemo(() => (gltf?.scene ? gltf.scene.clone(true) : null), [gltf]);
+  const holder = useRef(new THREE.Group());
+
+  useEffect(() => {
+    if (!root) return;
+    root.scale.setScalar(0.35);
+    root.rotation.set(0.25, -0.8, -0.15);
+    root.position.set(0.42, -0.34, -0.85);
+    holder.current.add(root);
+    camera.add(holder.current);
+    return () => {
+      camera.remove(holder.current);
+      holder.current.clear();
+    };
+  }, [camera, root]);
+
+  return null;
 }
 
 function FantasyWorld3D(props: {
@@ -1595,74 +1624,32 @@ function CrystalGLB(props: {
   );
 }
 
-function CrystalField(props: {
-  count?: number;
-  seed?: number;
-  centerZ?: number;
-  spreadX?: number;
-  spreadZ?: number;
-  minY?: number;
-  maxY?: number;
-}) {
-  const count = props.count ?? 60;
-  const seed = (props.seed ?? 1337) >>> 0;
-  const centerZ = props.centerZ ?? -40;
-  const spreadX = props.spreadX ?? 120;
-  const spreadZ = props.spreadZ ?? 380;
-  const minY = props.minY ?? 22;
-  const maxY = props.maxY ?? 80;
+function CrystalField(props: { playerPosRef: React.MutableRefObject<THREE.Vector3>; poolSize?: number; seed?: number; }) {
+  const poolSize = props.poolSize ?? 32;
+  const seedBase = props.seed ?? 1337;
+  const [tick, setTick] = useState(0);
 
-  const rand = useMemo(() => {
-    let x = seed || 123456789;
-    return () => {
-      x ^= x << 13;
-      x ^= x >>> 17;
-      x ^= x << 5;
-      return ((x >>> 0) / 4294967296);
-    };
-  }, [seed]);
+  useEffect(() => {
+    const t = setInterval(() => setTick((v) => v + 1), 400);
+    return () => clearInterval(t);
+  }, []);
 
   const items = useMemo(() => {
-    const out: Array<{
-      key: number;
-      uri: string;
-      position: [number, number, number];
-      s: number;
-      rx: number;
-      ry: number;
-      rz: number;
-    }> = [];
-
-    for (let i = 0; i < count; i++) {
-      const uri = CRYSTAL_URLS[Math.floor(rand() * CRYSTAL_URLS.length)] as any;
-
-      const x = (rand() - 0.5) * spreadX;
-      const z = centerZ + (rand() - 0.5) * spreadZ;
-      const y = minY + rand() * (maxY - minY);
-
-      const ry = rand() * Math.PI * 2;
-      const rx = (rand() - 0.5) * 0.25;
-      const rz = (rand() - 0.5) * 0.25;
-      const s = 2.5 + rand() * 6.5;
-
-      out.push({ key: i, uri, position: [x, y, z], s, rx, ry, rz });
+    const out: Array<{ key: number; uri: string; position: [number, number, number]; s: number; rx: number; ry: number; rz: number; }> = [];
+    const playerZ = props.playerPosRef.current.z;
+    const baseChunk = Math.floor((-playerZ) / CHUNK_LEN);
+    for (let i = 0; i < poolSize; i++) {
+      const chunk = baseChunk - 2 - i;
+      let s = (seedBase ^ (chunk * 1103515245)) >>> 0;
+      const rnd = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
+      const uri = CRYSTAL_URLS[Math.floor(rnd() * CRYSTAL_URLS.length)] || CRYSTAL_URLS[0];
+      const x = (rnd() - 0.5) * 70;
+      const z = -(chunk * CHUNK_LEN) - (rnd() * CHUNK_LEN);
+      const y = 20 + rnd() * 22;
+      out.push({ key: i, uri, position: [x, y, z], s: 2 + rnd() * 3.5, rx: (rnd() - 0.5) * 0.2, ry: rnd() * Math.PI * 2, rz: (rnd() - 0.5) * 0.2 });
     }
     return out;
-  }, [count, centerZ, spreadX, spreadZ, minY, maxY, rand]);
+  }, [poolSize, props.playerPosRef, seedBase, tick]);
 
-  return (
-    <group>
-      {items.map((it) => (
-        <CrystalGLB
-          key={it.key}
-          uri={it.uri}
-          position={it.position}
-          scale={it.s}
-          rotationX={it.rx}
-          rotationY={it.ry}
-          rotationZ={it.rz}
-        />
-      ))}
-    </group>
-  );
+  return <group>{items.map((it) => <CrystalGLB key={it.key} uri={it.uri} position={it.position} scale={it.s} rotationX={it.rx} rotationY={it.ry} rotationZ={it.rz} />)}</group>;
 }

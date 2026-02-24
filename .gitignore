@@ -37,3 +37,6 @@ backups/
 *.swo
 backup/
 **/backup/
+
+.bak_*
+**/.bak_*

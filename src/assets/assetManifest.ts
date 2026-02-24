@@ -17,6 +17,7 @@ export function buildAssetManifest(worldUris: any): Record<WorldKey, AssetDescri
       { id: 'gazebo', label: 'Spawn Gazebo', url: worldUris.fantasy.gazebo, kind: 'model' },
       { id: 'path', label: 'Ancient Path', url: worldUris.fantasy.path, kind: 'model' },
       { id: 'podium', label: 'Rune Podium', url: worldUris.fantasy.podium, kind: 'model' },
+      { id: 'staff', label: 'Mage Staff', url: worldUris.fantasy.staff, kind: 'model' },
       { id: 'forest-tree', label: 'Forest Tree', url: worldUris.fantasy.forestTree, kind: 'model' },
       { id: 'crystal-1', label: 'Crystal (1)', url: worldUris.fantasy.crystal1, kind: 'model' },
       { id: 'crystal-2', label: 'Crystal (2)', url: worldUris.fantasy.crystal2, kind: 'model' },
@@ -49,7 +50,7 @@ export function buildWorldEntryAssets(world: Exclude<WorldKey, 'core'>, worldUri
     out.push(...m.core);
 
     // Minimal "first frame" set
-    for (const id of ['gazebo', 'path', 'podium', 'crystal-1', 'fantasy-skybox']) {
+    for (const id of ['gazebo', 'path', 'podium', 'staff', 'crystal-1', 'fantasy-skybox']) {
       const a = pick(id);
       if (a) out.push(a);
     }

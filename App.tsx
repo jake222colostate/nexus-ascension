@@ -14,7 +14,7 @@ import SkybaseWorld3D from './src/worlds/skybase/SkybaseWorld3D';
 import { GameHUD } from './src/ui/hud/GameHUD';
 import { buildWorldEntryAssets } from './src/assets/assetManifest';
 import { downloadAllWorldAssets, getWorldUris, hasResolvedWorldUris } from './src/assets/worldUris';
-import { isWorldReady, markWorldReady } from './src/loading/worldLoadState';
+import { isWorldReady, markWorldPlayable, setWorldPhase, useWorldReadiness } from './src/loading/worldLoadState';
 
 
 const __origLog = console.log.bind(console);
@@ -311,6 +311,7 @@ function CombatWorld({ cfg }: { cfg: CombatConfig }) {
 
   const [toast, setToast] = useState<string>('');
     const [upOpen, setUpOpen] = useState(false);
+  const skyReady = useWorldReadiness('skybase');
     const [devOpen, setDevOpen] = useState(false);
   const [uiTick, setUiTick] = useState(0);
 
@@ -877,6 +878,7 @@ function CombatWorld({ cfg }: { cfg: CombatConfig }) {
     const [walking, setWalking] = useState(false);
     const [upOpen, setUpOpen] = useState(false);
     const [shootPulse, setShootPulse] = useState(0);
+    const fantasyReady = useWorldReadiness('fantasy');
 
       const killsRef = useRef<number>(0);
 
@@ -1014,6 +1016,7 @@ function CombatWorld({ cfg }: { cfg: CombatConfig }) {
 
     function fantasyUpgradesBody() {
   const [upOpen, setUpOpen] = useState(false);
+  const skyReady = useWorldReadiness('skybase');
       const rows = [
         { k: 'tap', name: 'Tap Power', lvl: tapLvl.value, cost: costTap },
         { k: 'kill', name: 'Kill Bonus', lvl: killLvl.value, cost: costKill },
@@ -1112,6 +1115,18 @@ function CombatWorld({ cfg }: { cfg: CombatConfig }) {
           />
 
           <View style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 }} pointerEvents="box-none">
+
+        {!fantasyReady.playable ? (
+          <FalloutLoaderOverlay
+            assets={buildWorldEntryAssets('fantasy', getWorldUris())}
+            onDone={() => undefined}
+            playable={fantasyReady.playable}
+            phase={fantasyReady.phase}
+            progress={fantasyReady.progress}
+            title={'Loading Fantasy Valley…'}
+            subtitle={'Preparing movement, staff, and first chunk…'}
+          />
+        ) : null}
           
               <GameHUD
                 currentWorld="Fantasy"
@@ -1155,8 +1170,7 @@ function LoadingFantasyScreen({ navigation }: any) {
       <FalloutLoaderOverlay
         assets={buildWorldEntryAssets('fantasy', getWorldUris())}
         onDone={() => {
-          markWorldReady('fantasy');
-          navigation.replace('Fantasy');
+navigation.replace('Fantasy');
         }}
         title={'Loading Fantasy Valley…'}
         subtitle={'Preparing biomes, enemies and collision mesh…'}
@@ -1171,8 +1185,7 @@ function LoadingSkybaseScreen({ navigation }: any) {
       <FalloutLoaderOverlay
         assets={buildWorldEntryAssets('skybase', getWorldUris())}
         onDone={() => {
-          markWorldReady('skybase');
-          navigation.replace('Skybase');
+navigation.replace('Skybase');
         }}
         title={'Loading Skybase…'}
         subtitle={'Energizing reactor decks and atmosphere…'}
@@ -1184,6 +1197,7 @@ function LoadingSkybaseScreen({ navigation }: any) {
 function SkybaseScreen({ navigation }: any) {
   const energy = useStoredNumber(K.energy, 0);
   const [upOpen, setUpOpen] = useState(false);
+  const skyReady = useWorldReadiness('skybase');
 
   return (
     <SafeAreaView edges={[]} style={styles.safe}>
@@ -1191,6 +1205,18 @@ function SkybaseScreen({ navigation }: any) {
         <SkybaseWorld3D layer={1} layerHeight={0} />
 
         <View style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 }} pointerEvents="box-none">
+
+        {!skyReady.playable ? (
+          <FalloutLoaderOverlay
+            assets={buildWorldEntryAssets('skybase', getWorldUris())}
+            onDone={() => markWorldPlayable('skybase')}
+            playable={skyReady.playable}
+            phase={skyReady.phase}
+            progress={skyReady.progress}
+            title={'Loading Skybase…'}
+            subtitle={'Preparing camera and first frame…'}
+          />
+        ) : null}
         
             <GameHUD
               currentWorld="Skybase"
