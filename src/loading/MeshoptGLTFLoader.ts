@@ -1,4 +1,4 @@
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { GLTFLoader } from 'three-stdlib';
 import { MeshoptDecoder } from 'meshoptimizer';
 
 export class MeshoptGLTFLoader extends GLTFLoader {
