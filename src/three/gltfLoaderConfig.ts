@@ -1,102 +1,71 @@
 import { useGLTF } from '@react-three/drei/native';
 import { useLoader } from '@react-three/fiber/native';
 import { MeshoptDecoder } from 'meshoptimizer';
-import { GLTFLoader } from 'three-stdlib';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { MeshoptGLTFLoaderV2 } from '../loading/MeshoptGLTFLoaderV2';
 
+let readyPromise: Promise<void> | null = null;
 let didInstall = false;
-let didLogAttach = false;
+let meshoptReady = false;
 
-const MESHOPT_DEBUG =
-  typeof globalThis !== 'undefined' &&
-  !!(globalThis as any).__NEXUS_DEBUG_MESHOPT;
-
-function debugLog(message: string, extra?: unknown) {
-  if (!MESHOPT_DEBUG) return;
-  if (typeof extra === 'undefined') {
-    console.log(message);
-    return;
+function getReadyPromise(): Promise<void> {
+  if (!readyPromise) {
+    readyPromise = Promise.resolve((MeshoptDecoder as any)?.ready)
+      .then(() => {
+        meshoptReady = true;
+      })
+      .catch(() => {});
   }
-  console.log(message, extra);
-}
-
-function markInstalled(loader: any) {
-  loader.__nexusMeshoptInstalled = true;
-  if (MESHOPT_DEBUG && !didLogAttach) {
-    didLogAttach = true;
-    console.log('[meshopt] configureGLTFLoader() setMeshoptDecoder executed on GLTFLoader instance');
-  }
-}
-
-function invalidateGLTFCaches() {
-  const r3fUseLoader = useLoader as any;
-  if (typeof r3fUseLoader.clear === 'function') {
-    r3fUseLoader.clear(GLTFLoader);
-  }
-
-  const dreiUseGLTF = useGLTF as any;
-  if (typeof dreiUseGLTF.clear === 'function') {
-    try {
-      dreiUseGLTF.clear();
-    } catch {
-      // Some versions require a URL key; best-effort clear.
-    }
-  }
-
-  debugLog('[meshopt] installMeshoptDecoder() cleared cached GLTFLoader instances');
+  return readyPromise;
 }
 
 export function configureGLTFLoader(loader: GLTFLoader) {
-  debugLog('[meshopt] configureGLTFLoader() called', {
-    alreadyInstalled: !!(loader as any).__nexusMeshoptInstalled,
-  });
-
   const anyLoader = loader as any;
   if (anyLoader.__nexusMeshoptInstalled) return;
-
-  if (anyLoader.setMeshoptDecoder && MeshoptDecoder) {
+  if (MeshoptDecoder && typeof anyLoader.setMeshoptDecoder === 'function') {
     anyLoader.setMeshoptDecoder(MeshoptDecoder as any);
-    markInstalled(anyLoader);
+    anyLoader.__nexusMeshoptInstalled = true;
   }
+}
+
+export function getGLTFLoader(manager?: ConstructorParameters<typeof GLTFLoader>[0]) {
+  const loader = new MeshoptGLTFLoaderV2(manager);
+  configureGLTFLoader(loader as any);
+  return loader as any;
 }
 
 export function installMeshoptDecoder() {
   if (didInstall) return;
   didInstall = true;
 
-  debugLog('[meshopt] installMeshoptDecoder() ran before first GLB load');
-
-  invalidateGLTFCaches();
-
-  // drei/native caches loaders internally; register decoder there too.
   if ((useGLTF as any)?.setMeshoptDecoder && MeshoptDecoder) {
     (useGLTF as any).setMeshoptDecoder(MeshoptDecoder as any);
   }
+
+  const ul: any = useLoader as any;
+  if (typeof ul.clear === 'function') {
+    ul.clear(GLTFLoader as any);
+    ul.clear(MeshoptGLTFLoaderV2 as any);
+  }
 }
 
-export function ensureMeshoptReady(): Promise<void> {
+export function ensureMeshoptReady() {
   installMeshoptDecoder();
-  return Promise.resolve((MeshoptDecoder as any)?.ready)
-    .then(() => {})
-    .catch(() => {});
+  return getReadyPromise();
 }
 
 export function useGLTFMeshopt(url: any): any {
   installMeshoptDecoder();
-  return useLoader(GLTFLoader as any, url, configureGLTFLoader as any);
+  if (!meshoptReady) {
+    throw ensureMeshoptReady();
+  }
+  return useLoader(MeshoptGLTFLoaderV2 as any, url);
 }
 
 export function preloadGLTFMeshopt(url: any) {
   installMeshoptDecoder();
-  (useLoader as any).preload(GLTFLoader as any, url, configureGLTFLoader as any);
-
-  if ((useGLTF as any)?.preload) {
-    (useGLTF as any).preload(url, undefined, undefined, configureGLTFLoader);
-  }
-}
-
-export function getGLTFLoader(manager?: ConstructorParameters<typeof GLTFLoader>[0]) {
-  installMeshoptDecoder();
-  const loader = new GLTFLoader(manager);
-  configureGLTFLoader(loader);
-  return loader;
+  ensureMeshoptReady().then(() => {
+    (useLoader as any).preload(MeshoptGLTFLoaderV2 as any, url);
+    if ((useGLTF as any)?.preload) (useGLTF as any).preload(url);
+  });
 }
