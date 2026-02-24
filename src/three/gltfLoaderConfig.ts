@@ -8,7 +8,19 @@ let readyPromise: Promise<void> | null = null;
 let didInstall = false;
 let meshoptReady = false;
 
+export function isMeshoptSupported(): boolean {
+  return !!MeshoptDecoder && (MeshoptDecoder as any).supported === true && typeof (MeshoptDecoder as any).ready?.then === 'function';
+}
+
+const meshoptReadyThenable = typeof (MeshoptDecoder as any)?.ready?.then === 'function';
+console.log(`[meshopt] supported=${isMeshoptSupported()} readyThenable=${meshoptReadyThenable}`);
+
+function getGLTFLoaderClass() {
+  return isMeshoptSupported() ? MeshoptGLTFLoaderV2 : GLTFLoader;
+}
+
 function getReadyPromise(): Promise<void> {
+  if (!isMeshoptSupported()) return Promise.resolve();
   if (!readyPromise) {
     readyPromise = Promise.resolve((MeshoptDecoder as any)?.ready)
       .then(() => {
@@ -22,14 +34,15 @@ function getReadyPromise(): Promise<void> {
 export function configureGLTFLoader(loader: GLTFLoader) {
   const anyLoader = loader as any;
   if (anyLoader.__nexusMeshoptInstalled) return;
-  if (MeshoptDecoder && typeof anyLoader.setMeshoptDecoder === 'function') {
+  if (isMeshoptSupported() && MeshoptDecoder && typeof anyLoader.setMeshoptDecoder === 'function') {
     anyLoader.setMeshoptDecoder(MeshoptDecoder as any);
     anyLoader.__nexusMeshoptInstalled = true;
   }
 }
 
 export function getGLTFLoader(manager?: ConstructorParameters<typeof GLTFLoader>[0]) {
-  const loader = new MeshoptGLTFLoaderV2(manager);
+  const LoaderClass = getGLTFLoaderClass();
+  const loader = new LoaderClass(manager as any);
   configureGLTFLoader(loader as any);
   return loader as any;
 }
@@ -38,7 +51,7 @@ export function installMeshoptDecoder() {
   if (didInstall) return;
   didInstall = true;
 
-  if ((useGLTF as any)?.setMeshoptDecoder && MeshoptDecoder) {
+  if (isMeshoptSupported() && (useGLTF as any)?.setMeshoptDecoder && MeshoptDecoder) {
     (useGLTF as any).setMeshoptDecoder(MeshoptDecoder as any);
   }
 
@@ -54,18 +67,21 @@ export function ensureMeshoptReady() {
   return getReadyPromise();
 }
 
-export function useGLTFMeshopt(url: any): any {
+export function useGLTFCompatible(url: any): any {
   installMeshoptDecoder();
-  if (!meshoptReady) {
+  if (isMeshoptSupported() && !meshoptReady) {
     throw ensureMeshoptReady();
   }
-  return useLoader(MeshoptGLTFLoaderV2 as any, url);
+  return useLoader(getGLTFLoaderClass() as any, url);
+}
+
+export function useGLTFMeshopt(url: any): any {
+  return useGLTFCompatible(url);
 }
 
 export function preloadGLTFMeshopt(url: any) {
   installMeshoptDecoder();
   ensureMeshoptReady().then(() => {
-    (useLoader as any).preload(MeshoptGLTFLoaderV2 as any, url);
-    if ((useGLTF as any)?.preload) (useGLTF as any).preload(url);
+    (useLoader as any).preload(getGLTFLoaderClass() as any, url);
   });
 }

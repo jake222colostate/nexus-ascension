@@ -1,5 +1,6 @@
 import { MeshoptDecoder } from 'meshoptimizer';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { isMeshoptSupported } from '../three/gltfLoaderConfig';
 
 export class MeshoptGLTFLoaderV2 extends GLTFLoader {
   constructor(manager?: ConstructorParameters<typeof GLTFLoader>[0]) {
@@ -10,7 +11,7 @@ export class MeshoptGLTFLoaderV2 extends GLTFLoader {
       console.log('[meshopt] MeshoptGLTFLoaderV2 ctor: MeshoptDecoder exists=', !!MeshoptDecoder, 'supported=', (MeshoptDecoder as any)?.supported, 'readyThenable=', !!(MeshoptDecoder as any)?.ready?.then);
     }
 
-    if (MeshoptDecoder && typeof anyThis.setMeshoptDecoder === 'function') {
+    if (isMeshoptSupported() && MeshoptDecoder && typeof anyThis.setMeshoptDecoder === 'function') {
       anyThis.setMeshoptDecoder(MeshoptDecoder as any);
       console.log('[meshopt] MeshoptGLTFLoaderV2 ctor: setMeshoptDecoder CALLED');
     }

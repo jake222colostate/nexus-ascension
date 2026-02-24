@@ -1,4 +1,5 @@
 import { Asset } from 'expo-asset';
+import { isMeshoptSupported } from '../three/gltfLoaderConfig';
 
 const modules = {
   core: {
@@ -98,6 +99,37 @@ export const WORLD_URIS: WorldUris = asUriMap(modules);
 let RESOLVED_WORLD_URIS: WorldUris | null = null;
 const loggedBest = new Set<string>();
 
+type VariantUris = {
+  meshopt?: string;
+  noMeshopt?: string;
+};
+
+const ASSET_VARIANTS: Partial<Record<keyof WorldUris, Record<string, VariantUris>>> = {
+  fantasy: {
+    mountain: { meshopt: 'mountainMobile', noMeshopt: 'mountainLegacy' },
+    gazebo: { meshopt: 'gazeboMobile', noMeshopt: 'gazeboLegacy' },
+    path: { meshopt: 'pathMobile', noMeshopt: 'pathLegacy' },
+    podium: { meshopt: 'podiumMobile', noMeshopt: 'podiumLegacy' },
+    forestTree: { meshopt: 'forestTreeMobile', noMeshopt: 'forestTreeLegacy' },
+    crystal1: { meshopt: 'crystal1Mobile', noMeshopt: 'crystal1Legacy' },
+    crystal2: { meshopt: 'crystal2Mobile', noMeshopt: 'crystal2Legacy' },
+    crystal3: { meshopt: 'crystal3Mobile', noMeshopt: 'crystal3Legacy' },
+    crystal4: { meshopt: 'crystal4Mobile', noMeshopt: 'crystal4Legacy' },
+    crystal5: { meshopt: 'crystal5Mobile', noMeshopt: 'crystal5Legacy' },
+    monsterModel: { meshopt: 'monsterModelMobile', noMeshopt: 'monsterModelLegacy' },
+    monsterWalk: { meshopt: 'monsterWalkMobile', noMeshopt: 'monsterWalkLegacy' },
+    monsterRun: { meshopt: 'monsterRunMobile', noMeshopt: 'monsterRunLegacy' },
+    monsterAttack: { meshopt: 'monsterAttackMobile', noMeshopt: 'monsterAttackLegacy' },
+    staff: { meshopt: 'staffMobile', noMeshopt: 'staffLegacy' },
+    summonBase: { meshopt: 'summonBaseMobile', noMeshopt: 'summonBaseLegacy' },
+    summonWalk: { meshopt: 'summonWalkMobile', noMeshopt: 'summonWalkLegacy' },
+    summonRun: { meshopt: 'summonRunMobile', noMeshopt: 'summonRunLegacy' },
+    summonCast1: { meshopt: 'summonCast1Mobile', noMeshopt: 'summonCast1Legacy' },
+    summonCast2: { meshopt: 'summonCast2Mobile', noMeshopt: 'summonCast2Legacy' },
+    summonCast3: { meshopt: 'summonCast3Mobile', noMeshopt: 'summonCast3Legacy' },
+  },
+};
+
 export function getWorldUris(): WorldUris {
   return RESOLVED_WORLD_URIS ?? WORLD_URIS;
 }
@@ -108,6 +140,40 @@ export function hasResolvedWorldUris(): boolean {
 
 export function getBestAssetUri(world: keyof WorldUris, key: string): string {
   const uris = getWorldUris()[world] ?? {};
+  const variant = ASSET_VARIANTS[world]?.[key];
+  const meshoptSupported = isMeshoptSupported();
+
+  if (variant) {
+    const meshoptUri = variant.meshopt ? String(uris[variant.meshopt] ?? '') : '';
+    const noMeshoptUri = variant.noMeshopt ? String(uris[variant.noMeshopt] ?? '') : '';
+
+    if (!meshoptSupported) {
+      if (noMeshoptUri) {
+        const logKey = `${world}:${key}:fallback`;
+        if (!loggedBest.has(logKey)) {
+          loggedBest.add(logKey);
+          console.log(`[meshopt] FALLBACK no-meshopt for key=${key} uri=${noMeshoptUri}`);
+        }
+        return noMeshoptUri;
+      }
+
+      throw new Error(
+        `[meshopt] Unsupported meshopt asset on iOS runtime: key=${key} uri=${meshoptUri || '(missing meshopt uri)'}. ` +
+        `Asset is meshopt-compressed and no noMeshopt variant is configured. Re-export/add a non-meshopt GLB and wire it as noMeshopt.`,
+      );
+    }
+
+    if (meshoptUri) {
+      const logKey = `${world}:${key}`;
+      if (!loggedBest.has(logKey)) {
+        loggedBest.add(logKey);
+        const meshoptKey = variant.meshopt as string;
+        console.log(`[ASSET_SELECT] world=${world} key=${key} chosen=${meshoptKey} mobile=${meshoptKey.toLowerCase().includes('mobile')} uri=${meshoptUri}`);
+      }
+      return meshoptUri;
+    }
+  }
+
   const preferredKeys = PREFERRED_KEYS[key] ?? [`${key}Mobile`, key, `${key}Legacy`];
   const chosenKey = preferredKeys.find((candidate) => Boolean(uris[candidate])) ?? key;
   const uri = String(uris[chosenKey] ?? uris[key] ?? '');
